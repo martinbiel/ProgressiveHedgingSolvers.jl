@@ -79,7 +79,7 @@ function add_penalty!(subproblem::SubProblem,ξ::AbstractVector)
     # Quadratic part
     qidx = collect(1:length(subproblem.optimvector))
     qval = zeros(length(subproblem.optimvector))
-    qval[1:length(ξ)] = 1.0
+    qval[1:length(ξ)] = subproblem.r
     if applicable(setquadobj!,model,qidx,qidx,qval)
         setquadobj!(model,qidx,qidx,qval)
     else
