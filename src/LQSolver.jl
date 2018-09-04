@@ -6,6 +6,7 @@ mutable struct LQSolver{M <: AbstractLinearQuadraticModel, S <: AbstractMathProg
         lqmodel = LinearQuadraticModel(optimsolver)
         solver = new{typeof(lqmodel),typeof(optimsolver)}(lqmodel,optimsolver)
         loadproblem!(solver.lqmodel,loadLP(model)...)
+        setvartype!(lqmodel, model.colCat)
 
         return solver
     end

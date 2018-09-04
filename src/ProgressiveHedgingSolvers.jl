@@ -5,6 +5,7 @@ using TraitDispatch
 using Parameters
 using JuMP
 using StochasticPrograms
+using StochasticPrograms._WS
 using MathProgBase
 using RecipesBase
 using ProgressMeter
@@ -29,7 +30,7 @@ include("subproblem.jl")
 include("AbstractProgressiveHedging.jl")
 include("parallel.jl")
 include("solvers/ProgressiveHedging.jl")
-#include("solvers/DProgressiveHedging.jl")
+include("solvers/DProgressiveHedging.jl")
 include("crash.jl")
 include("spinterface.jl")
 

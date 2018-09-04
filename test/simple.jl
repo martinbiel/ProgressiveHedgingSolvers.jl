@@ -1,6 +1,6 @@
 @everywhere begin
-    struct SimpleScenario <: StochasticPrograms.AbstractScenarioData
-        π::Float64
+    struct SimpleScenario <: AbstractScenarioData
+        π::Probability
         d::Vector{Float64}
         q::Vector{Float64}
     end

@@ -9,7 +9,7 @@ SellPrice = Dict(:wheat=>170,:corn=>150,:beets_quota=>36,:beets_extra=>10)
 Budget = 500
 
 @everywhere begin
-    struct FarmerScenario <: StochasticPrograms.AbstractScenarioData
+    struct FarmerScenario <: AbstractScenarioData
         Yield::Dict{Symbol,Float64}
     end
     StochasticPrograms.probability(::FarmerScenario) = 1/3

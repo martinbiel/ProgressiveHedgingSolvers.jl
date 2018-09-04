@@ -1,53 +1,39 @@
-@with_kw mutable struct DLShapedData{T <: Real}
+@with_kw mutable struct DProgressiveHedgingData{T <: Real}
     Q::T = 1e10
-    θ::T = -1e10
-    timestamp::Int = 1
+    δ::T = 1.0
     iterations::Int = 0
 end
 
-@with_kw mutable struct DLShapedParameters{T <: Real}
-    κ::T = 0.6
+@with_kw mutable struct DProgressiveHedgingParameters{T <: Real}
+    r::T = 1.0
     τ::T = 1e-6
     log::Bool = true
 end
 
-struct DLShaped{T <: Real, A <: AbstractVector, M <: LQSolver, S <: LQSolver} <: AbstractLShapedSolver{T,A,M,S}
+struct DProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
     structuredmodel::JuMP.Model
-    solverdata::DLShapedData{T}
+    solverdata::DProgressiveHedgingData{T}
 
-    # Master
-    mastersolver::M
-    mastervector::A
+    # Estimate
     c::A
-    x::A
+    ξ::A
+    ρ::A
     Q_history::A
 
-    # Subproblems
-    nscenarios::Int
-    subobjectives::Vector{A}
-    finished::Vector{Int}
-
     # Workers
+    nscenarios::Int
     subworkers::Vector{SubWorker{T,A,S}}
-    work::Vector{Work}
-    decisions::Decisions{A}
-    cutqueue::CutQueue{T}
-
-    # Cuts
-    θs::A
-    cuts::Vector{SparseHyperPlane{T}}
-    θ_history::A
 
     # Params
-    parameters::DLShapedParameters{T}
+    parameters::DProgressiveHedgingParameters{T}
     progress::ProgressThresh{T}
 
-    @implement_trait DLShaped IsParallel
+    @implement_trait DProgressiveHedging IsParallel
 
-    function (::Type{DLShaped})(model::JuMP.Model,x₀::AbstractVector,mastersolver::AbstractMathProgSolver,subsolver::AbstractMathProgSolver; kw...)
+    function (::Type{DProgressiveHedging})(model::JuMP.Model,x₀::AbstractVector,subsolver::AbstractMathProgSolver; kw...)
         if nworkers() == 1
             warn("There are no worker processes, defaulting to serial version of algorithm")
-            return LShaped(model,x₀,mastersolver,subsolver; kw...)
+            return ProgressiveHedging(model,x₀,subsolver; kw...)
         end
         length(x₀) != model.numCols && error("Incorrect length of starting guess, has ",length(x₀)," should be ",model.numCols)
         !haskey(model.ext,:SP) && error("The provided model is not structured")
@@ -59,47 +45,33 @@ struct DLShaped{T <: Real, A <: AbstractVector, M <: LQSolver, S <: LQSolver} <:
         x₀_ = convert(AbstractVector{T},copy(x₀))
         A = typeof(x₀_)
 
-        msolver = LQSolver(model,mastersolver)
-        M = typeof(msolver)
         S = LQSolver{typeof(LinearQuadraticModel(subsolver)),typeof(subsolver)}
         n = StochasticPrograms.nscenarios(model)
 
-        lshaped = new{T,A,M,S}(model,
-                               DLShapedData{T}(),
-                               msolver,
-                               mastervector,
-                               c_,
-                               x₀_,
-                               A(),
-                               n,
-                               Vector{A}(),
-                               Vector{Int}(),
-                               Vector{SubWorker{T,A,S}}(nworkers()),
-                               Vector{Work}(nworkers()),
-                               RemoteChannel(() -> DecisionChannel(Dict{Int,A}())),
-                               RemoteChannel(() -> Channel{QCut{T}}(4*nworkers()*n)),
-                               A(fill(-Inf,n)),
-                               Vector{SparseHyperPlane{T}}(),
-                               A(),
-                               DLShapedParameters{T}(;kw...),
-                               ProgressThresh(1.0, "Distributed L-Shaped Gap "))
+        ph = new{T,A,S}(model,
+                        DProgressiveHedgingData{T}(),
+                        c_,
+                        x₀_,
+                        zeros(x₀_),
+                        A(),
+                        n,
+                        Vector{SubWorker{T,A,S}}(nworkers()),
+                        DProgressiveHedgingParameters{T}(;kw...),
+                        ProgressThresh(1.0, "Distributed Progressive Hedging "))
         # Initialize solver
-        init!(lshaped,subsolver)
-        return lshaped
+        init!(ph,subsolver)
+        return ph
     end
 end
-DLShaped(model::JuMP.Model,mastersolver::AbstractMathProgSolver,subsolver::AbstractMathProgSolver; kw...) = DLShaped(model,rand(model.numCols),mastersolver,subsolver; kw...)
+DProgressiveHedging(model::JuMP.Model,subsolver::AbstractMathProgSolver; kw...) = DProgressiveHedging(model,rand(model.numCols),subsolver; kw...)
 
-function (lshaped::DLShaped)()
+function (ph::DProgressiveHedging)()
     # Reset timer
-    lshaped.progress.tfirst = lshaped.progress.tlast = time()
-    # Start workers
-    active_workers = init_workers!(lshaped)
+    ph.progress.tfirst = ph.progress.tlast = time()
     # Start procedure
     while true
-        status = iterate!(lshaped)
+        status = iterate!(ph)
         if status != :Valid
-            close_workers!(lshaped,active_workers)
             return status
         end
     end

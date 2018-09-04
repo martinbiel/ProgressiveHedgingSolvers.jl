@@ -85,42 +85,6 @@ function add_penalty!(subproblem::SubProblem,ξ::AbstractVector)
     else
         error("Setting a quadratic penalty requires a solver that handles quadratic objectives")
     end
-    # if subproblm.linearize
-    #     ncols = lshaped.structuredmodel.numCols
-    #     tidx = ncols+nscenarios(lshaped)+1
-    #     j = lshaped.solverdata.regularizerindex
-    #     if j == -1
-    #         for i in 1:ncols
-    #             addconstr!(model,[i,tidx],[-α,1],-α*ξ[i],Inf)
-    #             addconstr!(model,[i,tidx],[-α,-1],-Inf,-ξ[i])
-    #         end
-    #     else
-    #         for i in j:j+2*ncols-1
-    #             delconstrs!(model,i)
-    #         end
-    #         for i in 1:ncols
-    #             addconstr!(model,[i,tidx],[-α,1],-ξ[i],Inf)
-    #             addconstr!(model,[i,tidx],[-α,-1],-Inf,-ξ[i])
-    #         end
-    #     end
-    #     lshaped.solverdata.regularizerindex = length(lshaped.structuredmodel.linconstr)+length(lshaped.cuts)+1
-    #     if hastrait(lshaped,HasLevels)
-    #         lshaped.solverdata.regularizerindex += 1
-    #     end
-    # else
-    #     # Linear part
-    #     c[1:length(ξ)] -= α*ξ
-    #     setobj!(model,c)
-    #     # Quadratic part
-    #     qidx = collect(1:length(ξ)+lshaped.nscenarios)
-    #     qval = fill(α,length(lshaped.ξ))
-    #     append!(qval,zeros(lshaped.nscenarios))
-    #     if applicable(setquadobj!,model,qidx,qidx,qval)
-    #         setquadobj!(model,qidx,qidx,qval)
-    #     else
-    #         error("Setting a quadratic penalty requires a solver that handles quadratic objectives")
-    #     end
-    # end
 end
 
 function (subproblem::SubProblem)()

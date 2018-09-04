@@ -37,19 +37,7 @@ function get_objective_value(ph::AbstractProgressiveHedgingSolver)
     end
 end
 
-function resolve_subproblems!(ph::AbstractProgressiveHedgingSolver)
-    # Update subproblems
-    update_primals!(ph.subproblems,ph.ξ)
-    # Solve sub problems
-    for subproblem ∈ ph.subproblems
-        Q = subproblem()
-        ph.subobjectives[subproblem.id] = Q
-    end
-    # Return current objective value
-    return current_objective_value(ph)
-end
-
-function iterate_nominal!(ph::AbstractProgressiveHedgingSolver)
+function iterate!(ph::AbstractProgressiveHedgingSolver)
     # Resolve all subproblems at the current optimal solution
     Q = resolve_subproblems!(ph)
     if Q == Inf
@@ -58,14 +46,8 @@ function iterate_nominal!(ph::AbstractProgressiveHedgingSolver)
         return :Unbounded
     end
     ph.solverdata.Q = Q
-    # Update the estimate
-    ξ_prev = copy(ph.ξ)
-    ph.ξ[:] = sum([subproblem.π*subproblem.x for subproblem in ph.subproblems])
-    ξ_diff = norm(ph.ξ-ξ_prev,2)
-    # Update dual prices
-    update_duals!(ph.subproblems,ph.ξ)
-    # Update δ
-    ph.solverdata.δ = sqrt(ξ_diff+sum([s.π*norm(s.x-ph.ξ,2) for s in ph.subproblems]))
+    # Update iterate
+    update_iterate!(ph)
     # Log progress
     log!(ph)
     # Check optimality

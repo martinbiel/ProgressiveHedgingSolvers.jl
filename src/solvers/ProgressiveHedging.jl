@@ -23,7 +23,6 @@ struct ProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: Abst
     # Subproblems
     nscenarios::Int
     subproblems::Vector{SubProblem{T,A,S}}
-    subobjectives::A
 
     # Params
     parameters::ProgressiveHedgingParameters{T}
@@ -53,9 +52,8 @@ struct ProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: Abst
                         A(),
                         n,
                         Vector{SubProblem{T,A,S}}(),
-                        A(zeros(n)),
                         ProgressiveHedgingParameters{T}(;kw...),
-                        ProgressThresh(1.0, "L-Shaped Gap "))
+                        ProgressThresh(1.0, "Progressive Hedging"))
         # Initialize solver
         init!(ph,subsolver)
         return ph

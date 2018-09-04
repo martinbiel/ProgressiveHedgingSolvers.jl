@@ -14,6 +14,8 @@ function StructuredModel(solver::ProgressiveHedgingSolver,stochasticprogram::JuM
     x₀ = solver.crash(stochasticprogram,solver.subsolver)
     if solver.variant == :ph
         return ProgressiveHedging(stochasticprogram,x₀,solver.subsolver; solver.parameters...)
+    elseif solver.variant == :dph
+        return DProgressiveHedging(stochasticprogram,x₀,solver.subsolver; solver.parameters...)
     else
         error("Unknown progressive hedging variant: ", solver.variant)
     end
