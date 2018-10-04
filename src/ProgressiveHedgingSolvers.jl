@@ -1,18 +1,26 @@
 __precompile__()
 module ProgressiveHedgingSolvers
 
+# Standard library
+using LinearAlgebra
+using SparseArrays
+using Distributed
+using Printf
+
+# External libraries
 using TraitDispatch
 using Parameters
 using JuMP
 using StochasticPrograms
-using StochasticPrograms._WS
+using StochasticPrograms: _WS
 using MathProgBase
 using RecipesBase
 using ProgressMeter
 
 import Base: show, put!, wait, isready, take!, fetch
 import StochasticPrograms: StructuredModel, optimsolver, optimize_structured!, fill_solution!
-importall MathProgBase.SolverInterface
+
+const MPB = MathProgBase
 
 export
     ProgressiveHedgingSolver,

@@ -14,14 +14,14 @@ s2 = IntegerScenario(0.5,[4,3])
 
 sds = [s1,s2]
 
-sp = StochasticProgram(sds)
+integer = StochasticProgram(sds)
 
-@first_stage sp = begin
+@first_stage integer = begin
     @variable(model, x₁, Bin)
     @variable(model, x₂, Bin)
 end
 
-@second_stage sp = begin
+@second_stage integer = begin
     @decision x₁ x₂
     s = scenario
     @variable(model, y₁ >= 0, Int)
@@ -31,4 +31,4 @@ end
     @constraint(model, y₁ <= s.ξ[2]-x₂)
 end
 
-push!(problems,(sp,"Integer"))
+push!(problems,(integer,"Integer"))

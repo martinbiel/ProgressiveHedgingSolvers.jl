@@ -28,9 +28,9 @@ struct ProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: Abst
     parameters::ProgressiveHedgingParameters{T}
     progress::ProgressThresh{T}
 
-    function (::Type{ProgressiveHedging})(model::JuMP.Model,x₀::AbstractVector,subsolver::AbstractMathProgSolver; kw...)
+    function (::Type{ProgressiveHedging})(model::JuMP.Model,x₀::AbstractVector,subsolver::MPB.AbstractMathProgSolver; kw...)
         if nworkers() > 1
-            warn("There are worker processes, consider using distributed version of algorithm")
+            @warn "There are worker processes, consider using distributed version of algorithm"
         end
         length(x₀) != model.numCols && error("Incorrect length of starting guess, has ",length(x₀)," should be ",model.numCols)
         !haskey(model.ext,:SP) && error("The provided model is not structured")
@@ -41,14 +41,14 @@ struct ProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: Abst
         x₀_ = convert(AbstractVector{T},copy(x₀))
         A = typeof(x₀_)
 
-        S = LQSolver{typeof(LinearQuadraticModel(subsolver)),typeof(subsolver)}
+        S = LQSolver{typeof(MPB.LinearQuadraticModel(subsolver)),typeof(subsolver)}
         n = StochasticPrograms.nscenarios(model)
 
         ph = new{T,A,S}(model,
                         ProgressiveHedgingData{T}(),
                         c_,
                         x₀_,
-                        zeros(x₀_),
+                        zero(x₀_),
                         A(),
                         n,
                         Vector{SubProblem{T,A,S}}(),
@@ -59,7 +59,7 @@ struct ProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: Abst
         return ph
     end
 end
-ProgressiveHedging(model::JuMP.Model,subsolver::AbstractMathProgSolver; kw...) = ProgressiveHedging(model,rand(model.numCols),subsolver; kw...)
+ProgressiveHedging(model::JuMP.Model,subsolver::MPB.AbstractMathProgSolver; kw...) = ProgressiveHedging(model,rand(model.numCols),subsolver; kw...)
 
 function (ph::ProgressiveHedging)()
     # Reset timer

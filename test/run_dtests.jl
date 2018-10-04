@@ -1,4 +1,6 @@
-using Base.Test
+using Test
+using Distributed
+using Logging
 include("/usr/share/julia/test/testenv.jl")
 addprocs_with_testenv(3)
 @test nworkers() == 3
@@ -14,17 +16,17 @@ dphsolvers = [(ProgressiveHedgingSolver(:dph,GurobiSolver(OutputFlag=0),log=fals
 phsolvers = [(ProgressiveHedgingSolver(:ph,GurobiSolver(OutputFlag=0),log=false),"Progressive Hedging")]
 
 problems = Vector{Tuple{JuMP.Model,String}}()
-info("Loading test problems...")
-info("Loading simple...")
+@info "Loading test problems..."
+@info "Loading simple..."
 include("simple.jl")
-info("Loading farmer...")
+@info "Loading farmer..."
 include("farmer.jl")
-info("Loading infeasible...")
+@info "Loading infeasible..."
 include("infeasible.jl")
-info("Loading integer...")
+@info "Loading integer..."
 include("integer.jl")
 
-info("Test problems loaded. Starting test sequence.")
+@info "Test problems loaded. Starting test sequence."
 @testset "Distributed $phname Solver with Distributed Data: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
     solve(sp,solver=reference_solver)
     x̄ = copy(sp.colVal)
@@ -48,6 +50,8 @@ end
     solve(sp,solver=reference_solver)
     x̄ = copy(sp.colVal)
     Q̄ = copy(sp.objVal)
-    solve(sp,solver=phsolver)
+    with_logger(NullLogger()) do
+        solve(sp,solver=phsolver)
+    end
     @test abs(optimal_value(sp) - Q̄) <= τ*(1e-10+abs(Q̄))
 end

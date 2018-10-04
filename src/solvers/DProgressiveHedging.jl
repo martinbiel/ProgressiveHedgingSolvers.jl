@@ -30,9 +30,9 @@ struct DProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: Abs
 
     @implement_trait DProgressiveHedging IsParallel
 
-    function (::Type{DProgressiveHedging})(model::JuMP.Model,x₀::AbstractVector,subsolver::AbstractMathProgSolver; kw...)
+    function (::Type{DProgressiveHedging})(model::JuMP.Model,x₀::AbstractVector,subsolver::MPB.AbstractMathProgSolver; kw...)
         if nworkers() == 1
-            warn("There are no worker processes, defaulting to serial version of algorithm")
+            @warn "There are no worker processes, defaulting to serial version of algorithm"
             return ProgressiveHedging(model,x₀,subsolver; kw...)
         end
         length(x₀) != model.numCols && error("Incorrect length of starting guess, has ",length(x₀)," should be ",model.numCols)
@@ -45,17 +45,17 @@ struct DProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: Abs
         x₀_ = convert(AbstractVector{T},copy(x₀))
         A = typeof(x₀_)
 
-        S = LQSolver{typeof(LinearQuadraticModel(subsolver)),typeof(subsolver)}
+        S = LQSolver{typeof(MPB.LinearQuadraticModel(subsolver)),typeof(subsolver)}
         n = StochasticPrograms.nscenarios(model)
 
         ph = new{T,A,S}(model,
                         DProgressiveHedgingData{T}(),
                         c_,
                         x₀_,
-                        zeros(x₀_),
+                        zero(x₀_),
                         A(),
                         n,
-                        Vector{SubWorker{T,A,S}}(nworkers()),
+                        Vector{SubWorker{T,A,S}}(undef, nworkers()),
                         DProgressiveHedgingParameters{T}(;kw...),
                         ProgressThresh(1.0, "Distributed Progressive Hedging "))
         # Initialize solver
@@ -63,7 +63,7 @@ struct DProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: Abs
         return ph
     end
 end
-DProgressiveHedging(model::JuMP.Model,subsolver::AbstractMathProgSolver; kw...) = DProgressiveHedging(model,rand(model.numCols),subsolver; kw...)
+DProgressiveHedging(model::JuMP.Model,subsolver::MPB.AbstractMathProgSolver; kw...) = DProgressiveHedging(model,rand(model.numCols),subsolver; kw...)
 
 function (ph::DProgressiveHedging)()
     # Reset timer

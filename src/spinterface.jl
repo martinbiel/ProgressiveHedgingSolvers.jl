@@ -1,14 +1,14 @@
 struct ProgressiveHedgingSolver <: AbstractStructuredSolver
     variant::Symbol
-    subsolver::AbstractMathProgSolver
+    subsolver::MPB.AbstractMathProgSolver
     crash::Crash.CrashMethod
     parameters
 
-    function (::Type{ProgressiveHedgingSolver})(variant::Symbol, subsolver::AbstractMathProgSolver; crash::Crash.CrashMethod = Crash.None(), kwargs...)
+    function (::Type{ProgressiveHedgingSolver})(variant::Symbol, subsolver::MPB.AbstractMathProgSolver; crash::Crash.CrashMethod = Crash.None(), kwargs...)
         return new(variant,subsolver,crash,kwargs)
     end
 end
-ProgressiveHedgingSolver(subsolver::AbstractMathProgSolver; kwargs...) = ProgressiveHedgingSolver(:ph, subsolver, kwargs...)
+ProgressiveHedgingSolver(subsolver::MPB.AbstractMathProgSolver; kwargs...) = ProgressiveHedgingSolver(:ph, subsolver, kwargs...)
 
 function StructuredModel(solver::ProgressiveHedgingSolver,stochasticprogram::JuMP.Model)
     x₀ = solver.crash(stochasticprogram,solver.subsolver)

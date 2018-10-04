@@ -4,7 +4,7 @@ nscenarios(ph::AbstractProgressiveHedgingSolver) = ph.nscenarios
 
 # Initialization #
 # ======================================================================== #
-function init!(ph::AbstractProgressiveHedgingSolver,subsolver::AbstractMathProgSolver)
+function init!(ph::AbstractProgressiveHedgingSolver,subsolver::MPB.AbstractMathProgSolver)
     # Initialize progress meter
     ph.progress.thresh = ph.parameters.τ
     # Finish initialization based on solver traits

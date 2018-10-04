@@ -3,8 +3,8 @@
 # ------------------------------------------------------------
 @define_trait IsParallel
 
-@define_traitfn IsParallel init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S},subsolver::AbstractMathProgSolver) where {T <: Real, A <: AbstractVector, S <: LQSolver} = begin
-    function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S},subsolver::AbstractMathProgSolver,!IsParallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
+@define_traitfn IsParallel init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S},subsolver::MPB.AbstractMathProgSolver) where {T <: Real, A <: AbstractVector, S <: LQSolver} = begin
+    function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S},subsolver::MPB.AbstractMathProgSolver,!IsParallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
         # Prepare the subproblems
         m = ph.structuredmodel
         load_subproblems!(ph,subsolver)
@@ -12,7 +12,7 @@
         return ph
     end
 
-    function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S},subsolver::AbstractMathProgSolver,IsParallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
+    function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S},subsolver::MPB.AbstractMathProgSolver,IsParallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
         # Partitioning
         (jobsize,extra) = divrem(ph.nscenarios,nworkers())
         # One extra to guarantee coverage
@@ -23,7 +23,7 @@
         m = ph.structuredmodel
         start = 1
         stop = jobsize
-        active_workers = Vector{Future}(nworkers())
+        active_workers = Vector{Future}(undef, nworkers())
         for w in workers()
             ph.subworkers[w-1] = RemoteChannel(() -> Channel{Vector{SubProblem{T,A,S}}}(1), w)
             active_workers[w-1] = load_worker!(scenarioproblems(m),m,w,ph.subworkers[w-1],ph.ξ,start,stop,ph.parameters.r,subsolver)
@@ -47,7 +47,7 @@ end
 
 @define_traitfn IsParallel resolve_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A}) where {T <: Real, A <: AbstractVector} = begin
     function resolve_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A},!IsParallel) where {T <: Real, A <: AbstractVector}
-        Qs = A(length(ph.subproblems))
+        Qs = A(undef, length(ph.subproblems))
         # Update subproblems
         update_primals!(ph.subproblems,ph.ξ)
         # Solve sub problems
@@ -59,7 +59,7 @@ end
     end
 
     function resolve_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A},IsParallel) where {T <: Real, A <: AbstractVector}
-        active_workers = Vector{Future}(nworkers())
+        active_workers = Vector{Future}(undef, nworkers())
         for w in workers()
             active_workers[w-1] = remotecall(resolve_subproblems!,w,ph.subworkers[w-1],ph.ξ)
         end
@@ -82,7 +82,7 @@ end
     end
 
     function update_iterate!(ph::AbstractProgressiveHedgingSolver,IsParallel)
-        active_workers = Vector{Future}(nworkers())
+        active_workers = Vector{Future}(undef, nworkers())
         for w in workers()
             active_workers[w-1] = remotecall(collect_primals,w,ph.subworkers[w-1],length(ph.ξ))
         end
@@ -102,7 +102,7 @@ end
 
 @define_traitfn IsParallel init_workers!(ph::AbstractProgressiveHedgingSolver) = begin
     function init_workers!(ph::AbstractProgressiveHedgingSolver,IsParallel)
-        active_workers = Vector{Future}(nworkers())
+        active_workers = Vector{Future}(undef, nworkers())
         for w in workers()
             active_workers[w-1] = remotecall(work_on_subproblems!,
                                              w,
@@ -152,7 +152,7 @@ end
 
 @define_traitfn IsParallel fill_submodels!(ph::AbstractProgressiveHedgingSolver,scenarioproblems::StochasticPrograms.DScenarioProblems) = begin
     function fill_submodels!(ph::AbstractProgressiveHedgingSolver,scenarioproblems::StochasticPrograms.DScenarioProblems,!IsParallel)
-        active_workers = Vector{Future}(length(scenarioproblems))
+        active_workers = Vector{Future}(undef, nsubproblems(scenarioproblems))
         j = 1
         for w in workers()
             n = remotecall_fetch((sp)->length(fetch(sp).problems),w,scenarioproblems[w-1])
@@ -165,11 +165,11 @@ end
                 j += 1
             end
         end
-        @async map(wait,active_workers)
+        map(wait,active_workers)
     end
 
     function fill_submodels!(ph::AbstractProgressiveHedgingSolver,scenarioproblems::StochasticPrograms.DScenarioProblems,IsParallel)
-        active_workers = Vector{Future}(nworkers())
+        active_workers = Vector{Future}(undef, nworkers())
         for w in workers()
             active_workers[w-1] = remotecall(fill_submodels!,
                                              w,
@@ -177,14 +177,14 @@ end
                                              ph.ξ,
                                              scenarioproblems[w-1])
         end
-        @async map(wait,active_workers)
+        map(wait,active_workers)
     end
 end
 
 SubWorker{T,A,S} = RemoteChannel{Channel{Vector{SubProblem{T,A,S}}}}
 ScenarioProblems{D,SD,S} = RemoteChannel{Channel{StochasticPrograms.ScenarioProblems{D,SD,S}}}
 
-function load_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A},subsolver::AbstractMathProgSolver) where {T <: Real, A <: AbstractVector}
+function load_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A},subsolver::MPB.AbstractMathProgSolver) where {T <: Real, A <: AbstractVector}
     for i = 1:ph.nscenarios
         push!(ph.subproblems,SubProblem(WS(ph.structuredmodel,scenario(ph.structuredmodel,i),subsolver),
                                         i,
@@ -204,7 +204,7 @@ function load_worker!(scenarioproblems::StochasticPrograms.ScenarioProblems,
                       start::Integer,
                       stop::Integer,
                       r::AbstractFloat,
-                      subsolver::AbstractMathProgSolver)
+                      subsolver::MPB.AbstractMathProgSolver)
     ws_problems = [WS(sp,scenarioproblems.scenariodata[i],subsolver) for i = start:stop]
     πs = [probability(scenarioproblems.scenariodata[i]) for i = start:stop]
     return remotecall(init_subworker!,
@@ -226,7 +226,7 @@ function load_worker!(scenarioproblems::StochasticPrograms.DScenarioProblems,
                       start::Integer,
                       stop::Integer,
                       r::AbstractFloat,
-                      subsolver::AbstractMathProgSolver)
+                      subsolver::MPB.AbstractMathProgSolver)
     return remotecall(init_subworker!,
                       w,
                       worker,
@@ -245,9 +245,9 @@ function init_subworker!(subworker::SubWorker{T,A,S},
                          πs::A,
                          r::AbstractFloat,
                          xdim::Integer,
-                         subsolver::AbstractMathProgSolver,
+                         subsolver::MPB.AbstractMathProgSolver,
                          ids::Vector{Int}) where {T <: Real, A <: AbstractArray, S <: LQSolver}
-    subproblems = Vector{SubProblem{T,A,S}}(length(ids))
+    subproblems = Vector{SubProblem{T,A,S}}(undef, length(ids))
     for (i,id) = enumerate(ids)
         subproblems[i] = SubProblem(submodels[i],id,πs[i],r,xdim,subsolver)
     end
@@ -261,10 +261,10 @@ function init_subworker!(subworker::SubWorker{T,A,S},
                          scenarioproblems::ScenarioProblems,
                          r::AbstractFloat,
                          xdim::Integer,
-                         subsolver::AbstractMathProgSolver,
+                         subsolver::MPB.AbstractMathProgSolver,
                          ids::Vector{Int}) where {T <: Real, A <: AbstractArray, S <: LQSolver}
     sp = fetch(scenarioproblems)
-    subproblems = Vector{SubProblem{T,A,S}}(length(ids))
+    subproblems = Vector{SubProblem{T,A,S}}(undef, length(ids))
     for (i,id) = enumerate(ids)
         subproblems[i] = SubProblem(_WS(stage_one_generator,stage_two_generator,first_stage,stage_data(sp),scenario(sp,i),subsolver),
                                     id,
@@ -278,7 +278,7 @@ end
 
 function resolve_subproblems!(subworker::SubWorker{T,A,S},ξ::AbstractVector) where {T <: Real, A <: AbstractArray, S <: LQSolver}
     subproblems::Vector{SubProblem{T,A,S}} = fetch(subworker)
-    Qs = A(length(subproblems))
+    Qs = A(undef,length(subproblems))
     for (i,subproblem) ∈ enumerate(subproblems)
         update_primal!(subproblem,ξ)
         Qs[i] = subproblem()

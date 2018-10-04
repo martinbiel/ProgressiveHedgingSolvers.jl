@@ -9,7 +9,7 @@ struct SubProblem{T <: Real, A <: AbstractVector, S <: LQSolver}
     ρ::A
     optimvector::A
 
-    function (::Type{SubProblem})(model::JuMP.Model,id::Integer,π::AbstractFloat,r::AbstractFloat,xdim::Integer,optimsolver::AbstractMathProgSolver)
+    function (::Type{SubProblem})(model::JuMP.Model,id::Integer,π::AbstractFloat,r::AbstractFloat,xdim::Integer,optimsolver::MPB.AbstractMathProgSolver)
         solver = LQSolver(model,optimsolver)
         solver()
         optimvector = getsolution(solver)
@@ -29,12 +29,12 @@ struct SubProblem{T <: Real, A <: AbstractVector, S <: LQSolver}
                                              c_,
                                              x₀_,
                                              y₀_,
-                                             zeros(x₀_),
+                                             zero(x₀_),
                                              optimvector_)
         return subproblem
     end
 
-    function (::Type{SubProblem})(model::JuMP.Model,id::Integer,π::AbstractFloat,r::AbstractFloat,x₀::AbstractVector,y₀::AbstractVector,optimsolver::AbstractMathProgSolver)
+    function (::Type{SubProblem})(model::JuMP.Model,id::Integer,π::AbstractFloat,r::AbstractFloat,x₀::AbstractVector,y₀::AbstractVector,optimsolver::MPB.AbstractMathProgSolver)
         T = promote_type(eltype(x₀),eltype(y₀),Float32)
         c_ = convert(AbstractVector{T},JuMP.prepAffObjective(model))
         c_ *= model.objSense == :Min ? 1 : -1
@@ -49,7 +49,7 @@ struct SubProblem{T <: Real, A <: AbstractVector, S <: LQSolver}
                                              c_,
                                              x₀_,
                                              y₀_,
-                                             zeros(x₀_),
+                                             zero(x₀_),
                                              [x₀_...,y₀_...])
         return subproblem
     end
@@ -75,13 +75,13 @@ function add_penalty!(subproblem::SubProblem,ξ::AbstractVector)
     c = copy(subproblem.c)
     c[1:length(ξ)] += subproblem.ρ
     c[1:length(ξ)] -= subproblem.r*ξ
-    setobj!(model,c)
+    MPB.setobj!(model,c)
     # Quadratic part
     qidx = collect(1:length(subproblem.optimvector))
     qval = zeros(length(subproblem.optimvector))
-    qval[1:length(ξ)] = subproblem.r
-    if applicable(setquadobj!,model,qidx,qidx,qval)
-        setquadobj!(model,qidx,qidx,qval)
+    qval[1:length(ξ)] .= subproblem.r
+    if applicable(MPB.setquadobj!,model,qidx,qidx,qval)
+        MPB.setquadobj!(model,qidx,qidx,qval)
     else
         error("Setting a quadratic penalty requires a solver that handles quadratic objectives")
     end
