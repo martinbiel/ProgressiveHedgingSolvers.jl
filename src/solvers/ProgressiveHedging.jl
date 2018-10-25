@@ -10,6 +10,18 @@ end
     log::Bool = true
 end
 
+"""
+    ProgressiveHedging
+
+Functor object for the progressive-hedging algorithm. Create by supplying `:ph` to the `ProgressiveHedgingSolver` factory function and then pass to a `StochasticPrograms.jl` model.
+
+...
+# Algorithm parameters
+- `r::Real = 1.0`: Penalty parameter
+- `τ::Real = 1e-6`: Relative tolerance for convergence checks.
+- `log::Bool = true`: Specifices if progressive-hedging procedure should be logged on standard output or not.
+...
+"""
 struct ProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
     structuredmodel::JuMP.Model
     solverdata::ProgressiveHedgingData{T}

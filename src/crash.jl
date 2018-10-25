@@ -1,3 +1,16 @@
+"""
+    Crash
+
+Collection of crash methods used to generate initial decisions in L-shaped algorithms. Supply as functor object to the `crash` keyword in calls to `LShapedSolver`
+
+...
+# Crash methods
+- `Crash.None()`: Randomize the initial decision (default).
+- `Crash.EVP()`: Solve the expected value problem corresponding to the stochastic program and use the expected value solution as initial decision.
+- `Crash.Scenario(scenario::AbstractScenario)`: Solve the wait-and-see problem corresponding a supplied scenario and use the optimal solution as initial decision.
+- `Crash.Custom(x₀)`: Use the user-supplied `x₀` as initial decision.
+...
+"""
 module Crash
 
 using StochasticPrograms
