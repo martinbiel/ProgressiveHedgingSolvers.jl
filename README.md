@@ -1,10 +1,10 @@
 # ProgressiveHedgingSolvers
 
-[![Build Status](https://travis-ci.org/martinbiel/ProgressiveHedgingSolvers.jl.svg?branch=master)](https://travis-ci.org/martinbiel/ProgressiveHedgingSolvers.jl)
+[![Build Status](https://travis-ci.org/martinbiel/ProgressiveHedgingSolvers.jl.svg?branch=test)](https://travis-ci.org/martinbiel/ProgressiveHedgingSolvers.jl)
 
-[![Coverage Status](https://coveralls.io/repos/martinbiel/ProgressiveHedgingSolvers.jl/badge.svg?branch=master&service=github)](https://coveralls.io/github/martinbiel/ProgressiveHedgingSolvers.jl?branch=master)
+[![Coverage Status](https://coveralls.io/repos/martinbiel/ProgressiveHedgingSolvers.jl/badge.svg?branch=test&service=github)](https://coveralls.io/github/martinbiel/ProgressiveHedgingSolvers.jl?branch=test)
 
-[![codecov.io](http://codecov.io/github/martinbiel/ProgressiveHedgingSolvers.jl/coverage.svg?branch=master)](http://codecov.io/github/martinbiel/ProgressiveHedgingSolvers.jl?branch=master)
+[![codecov.io](http://codecov.io/github/martinbiel/ProgressiveHedgingSolvers.jl/coverage.svg?branch=test)](http://codecov.io/github/martinbiel/ProgressiveHedgingSolvers.jl?branch=test)
 
 `ProgressiveHedgingSolvers` includes implementations of the Progressive-hedging algorithm for two-stage stochastic recourse problems. All algorithm variants are based on the original progressive-hedging algorithm by Rockafellar and Wets. `ProgressiveHedgingSolvers` interfaces with [StochasticPrograms.jl][StochProg], and a given recourse model `sp` is solved effectively through
 
