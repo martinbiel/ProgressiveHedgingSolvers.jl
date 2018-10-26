@@ -51,7 +51,7 @@ function StructuredModel(solver::ProgressiveHedgingSolver,stochasticprogram::JuM
 end
 
 function optimsolver(solver::ProgressiveHedgingSolver)
-    return solver.subsolver
+    return solver.qpsolver
 end
 
 function optimize_structured!(ph::AbstractProgressiveHedgingSolver)
