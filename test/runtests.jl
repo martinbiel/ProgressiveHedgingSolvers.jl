@@ -1,6 +1,6 @@
 using ProgressiveHedgingSolvers
 using Test
-using Distributed
+using LinearAlgebra
 using JuMP
 using StochasticPrograms
 using Gurobi
@@ -9,7 +9,7 @@ using Gurobi
 reference_solver = GurobiSolver(OutputFlag=0)
 phsolvers = [(ProgressiveHedgingSolver(:ph,GurobiSolver(OutputFlag=0),log=false),"Progressive Hedging")]
 
-problems = Vector{Tuple{JuMP.Model,String}}()
+problems = Vector{Tuple{<:StochasticProgram,String}}()
 @info "Loading test problems..."
 @info "Loading simple..."
 include("simple.jl")
@@ -20,13 +20,15 @@ include("infeasible.jl")
 @info "Loading integer..."
 include("integer.jl")
 
-@info "Test problems loaded. Starting test sequence."
-@testset "$phname Solver: $name" for (phsolver,phname) in phsolvers, (sp,name) in problems
-    solve(sp,solver=reference_solver)
-    x̄ = optimal_decision(sp)
-    Q̄ = optimal_value(sp)
-    solve(sp,solver=phsolver)
-    @test abs(optimal_value(sp) - Q̄) <= τ*(1e-10+abs(Q̄))
+@testset "Sequential solver" begin
+    @testset "$phname Solver: $name" for (phsolver,phname) in phsolvers, (sp,name) in problems
+        optimize!(sp,solver=reference_solver)
+        x̄ = optimal_decision(sp)
+        Q̄ = optimal_value(sp)
+        optimize!(sp,solver=phsolver)
+        @test abs(optimal_value(sp) - Q̄) <= τ*(1e-10+abs(Q̄))
+        @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
+    end
 end
 
 @info "Starting distributed tests..."

@@ -22,8 +22,8 @@ Functor object for the progressive-hedging algorithm. Create by supplying `:ph` 
 - `log::Bool = true`: Specifices if progressive-hedging procedure should be logged on standard output or not.
 ...
 """
-struct ProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
-    structuredmodel::JuMP.Model
+struct ProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgram, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
+    stochasticprogram::SP
     solverdata::ProgressiveHedgingData{T}
 
     # Estimate
@@ -40,38 +40,38 @@ struct ProgressiveHedging{T <: Real, A <: AbstractVector, S <: LQSolver} <: Abst
     parameters::ProgressiveHedgingParameters{T}
     progress::ProgressThresh{T}
 
-    function (::Type{ProgressiveHedging})(model::JuMP.Model,x₀::AbstractVector,subsolver::MPB.AbstractMathProgSolver; kw...)
+    function (::Type{ProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
         if nworkers() > 1
             @warn "There are worker processes, consider using distributed version of algorithm"
         end
-        length(x₀) != model.numCols && error("Incorrect length of starting guess, has ",length(x₀)," should be ",model.numCols)
-        !haskey(model.ext,:SP) && error("The provided model is not structured")
+        first_stage = StochasticPrograms.get_stage_one(stochasticprogram)
+        length(x₀) != first_stage.numCols && error("Incorrect length of starting guess, has ", length(x₀), " should be ", first_stage.numCols)
 
-        T = promote_type(eltype(x₀),Float32)
-        c_ = convert(AbstractVector{T},JuMP.prepAffObjective(model))
-        c_ *= model.objSense == :Min ? 1 : -1
-        x₀_ = convert(AbstractVector{T},copy(x₀))
+        T = promote_type(eltype(x₀), Float32)
+        c_ = convert(AbstractVector{T}, JuMP.prepAffObjective(first_stage))
+        c_ *= first_stage.objSense == :Min ? 1 : -1
+        x₀_ = convert(AbstractVector{T}, copy(x₀))
         A = typeof(x₀_)
+        SP = typeof(stochasticprogram)
+        S = LQSolver{typeof(MPB.LinearQuadraticModel(subsolver)), typeof(subsolver)}
+        n = StochasticPrograms.nscenarios(stochasticprogram)
 
-        S = LQSolver{typeof(MPB.LinearQuadraticModel(subsolver)),typeof(subsolver)}
-        n = StochasticPrograms.nscenarios(model)
-
-        ph = new{T,A,S}(model,
-                        ProgressiveHedgingData{T}(),
-                        c_,
-                        x₀_,
-                        zero(x₀_),
-                        A(),
-                        n,
-                        Vector{SubProblem{T,A,S}}(),
-                        ProgressiveHedgingParameters{T}(;kw...),
-                        ProgressThresh(1.0, "Progressive Hedging"))
+        ph = new{T,A,SP,S}(stochasticprogram,
+                           ProgressiveHedgingData{T}(),
+                           c_,
+                           x₀_,
+                           zero(x₀_),
+                           A(),
+                           n,
+                           Vector{SubProblem{T,A,S}}(),
+                           ProgressiveHedgingParameters{T}(;kw...),
+                           ProgressThresh(1.0, "Progressive Hedging"))
         # Initialize solver
-        init!(ph,subsolver)
+        init!(ph, subsolver)
         return ph
     end
 end
-ProgressiveHedging(model::JuMP.Model,subsolver::MPB.AbstractMathProgSolver; kw...) = ProgressiveHedging(model,rand(model.numCols),subsolver; kw...)
+ProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = ProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
 
 function (ph::ProgressiveHedging)()
     # Reset timer

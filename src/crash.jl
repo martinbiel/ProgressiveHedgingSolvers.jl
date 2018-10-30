@@ -20,32 +20,32 @@ abstract type CrashMethod end
 
 struct None <: CrashMethod end
 
-function (crash::None)(sp::JuMP.Model,solver::MathProgBase.AbstractMathProgSolver)
-    return rand(sp.numCols)
+function (crash::None)(sp::StochasticProgram, solver::MathProgBase.AbstractMathProgSolver)
+    return rand(StochasticPrograms.decision_length(sp))
 end
 
 struct EVP <: CrashMethod end
 
-function (crash::EVP)(sp::JuMP.Model,solver::MathProgBase.AbstractMathProgSolver)
-    evp = StochasticPrograms.EVP(sp,solver)
+function (crash::EVP)(sp::StochasticProgram, solver::MathProgBase.AbstractMathProgSolver)
+    evp = StochasticPrograms.EVP(sp; solver = solver)
     status = solve(evp)
     status != :Optimal && error("Could not solve EVP model during crash procedure. Aborting.")
-    return evp.colVal[1:sp.numCols]
+    return evp.colVal[1:decision_length(sp)]
 end
 
-struct Scenario{S <: AbstractScenarioData} <: CrashMethod
+struct Scenario{S <: AbstractScenario} <: CrashMethod
     scenario::S
 
-    function (::Type{Scenario})(scenario::S) where S <: AbstractScenarioData
+    function (::Type{Scenario})(scenario::S) where S <: AbstractScenario
         return new{S}(scenario)
     end
 end
 
-function (crash::Scenario)(sp::JuMP.Model,solver::MathProgBase.AbstractMathProgSolver)
-    ws = WS(sp,crash.scenario,solver)
+function (crash::Scenario)(so::StochasticProgram, solver::MathProgBase.AbstractMathProgSolver)
+    ws = WS(sp, crash.scenario; solver = solver)
     status = solve(ws)
     status != :Optimal && error("Could not solve wait-and-see model during crash procedure. Aborting.")
-    return ws.colVal[1:sp.numCols]
+    return ws.colVal[1:decision_length(sp)]
 end
 
 struct Custom{T <: Real} <: CrashMethod
@@ -56,8 +56,8 @@ struct Custom{T <: Real} <: CrashMethod
     end
 end
 
-function (crash::Custom)(sp::JuMP.Model,solver::MathProgBase.AbstractMathProgSolver)
-    return crash.x₀
+function (crash::Custom)(sp::StochasticProgram, solver::MathProgBase.AbstractMathProgSolver)
+    return crash.x₀[1:decision_length(sp)]
 end
 
 end

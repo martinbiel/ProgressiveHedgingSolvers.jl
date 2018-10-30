@@ -1,20 +1,16 @@
-@everywhere begin
-    struct IntegerScenario <: AbstractScenarioData
-        π::Probability
-        ξ::Vector{Int}
-    end
+@scenario Integer = begin
+    ξ₁::Int
+    ξ₂::Int
 
-    function StochasticPrograms.expected(sds::Vector{IntegerScenario})
-        sd = IntegerScenario(1,sum([s.π*s.ξ for s in sds]))
+    @expectation begin
+        return IntegerScenario(sum([round(Int, probability(s)*s.ξ₁) for s in scenarios]),
+                               sum([round(Int, probability(s)*s.ξ₂) for s in scenarios]))
     end
 end
+s₁ = IntegerScenario(2, 2, probability = 0.5)
+s₂ = IntegerScenario(4, 3, probability = 0.5)
 
-s1 = IntegerScenario(0.5,[2,2])
-s2 = IntegerScenario(0.5,[4,3])
-
-sds = [s1,s2]
-
-integer = StochasticProgram(sds)
+integer = StochasticProgram([s₁,s₂])
 
 @first_stage integer = begin
     @variable(model, x₁, Bin)
@@ -27,8 +23,8 @@ end
     @variable(model, y₁ >= 0, Int)
     @variable(model, y₂ >= 0, Int)
     @objective(model, Min, -2*y₁ - 3*y₂)
-    @constraint(model, y₁ + 2*y₂ <= s.ξ[1]-x₁)
-    @constraint(model, y₁ <= s.ξ[2]-x₂)
+    @constraint(model, y₁ + 2*y₂ <= s.ξ₁-x₁)
+    @constraint(model, y₁ <= s.ξ₂-x₂)
 end
 
 push!(problems,(integer,"Integer"))

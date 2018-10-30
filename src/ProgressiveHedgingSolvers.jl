@@ -18,7 +18,7 @@ using RecipesBase
 using ProgressMeter
 
 import Base: show, put!, wait, isready, take!, fetch
-import StochasticPrograms: StructuredModel, optimsolver, optimize_structured!, fill_solution!
+import StochasticPrograms: StructuredModel, internal_solver, optimize_structured!, fill_solution!, solverstr
 
 const MPB = MathProgBase
 

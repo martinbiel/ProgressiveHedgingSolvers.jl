@@ -4,11 +4,11 @@ nscenarios(ph::AbstractProgressiveHedgingSolver) = ph.nscenarios
 
 # Initialization #
 # ======================================================================== #
-function init!(ph::AbstractProgressiveHedgingSolver,subsolver::MPB.AbstractMathProgSolver)
+function init!(ph::AbstractProgressiveHedgingSolver, subsolver::MPB.AbstractMathProgSolver)
     # Initialize progress meter
     ph.progress.thresh = ph.parameters.τ
     # Finish initialization based on solver traits
-    init_subproblems!(ph,subsolver)
+    init_subproblems!(ph, subsolver)
 end
 # ======================================================================== #
 
@@ -16,18 +16,14 @@ end
 # ======================================================================== #
 function set_params!(ph::AbstractProgressiveHedgingSolver; kwargs...)
     for (k,v) in kwargs
-        setfield!(ph.parameters,k,v)
+        setfield!(ph.parameters, k, v)
     end
 end
 
-function current_objective_value(ph::AbstractProgressiveHedgingSolver,Qs::AbstractVector)
+function current_objective_value(ph::AbstractProgressiveHedgingSolver, Qs::AbstractVector)
     return sum(Qs)
 end
-current_objective_value(ph) = current_objective_value(ph,ph.subobjectives)
-
-function get_decision(ph::AbstractProgressiveHedgingSolver)
-    return ph.ξ
-end
+current_objective_value(ph) = current_objective_value(ph, ph.subobjectives)
 
 function get_objective_value(ph::AbstractProgressiveHedgingSolver)
     if !isempty(ph.Q_history)
@@ -61,9 +57,8 @@ end
 
 function log!(ph::AbstractProgressiveHedgingSolver)
     @unpack Q,δ = ph.solverdata
-    push!(ph.Q_history,Q)
+    push!(ph.Q_history, Q)
     ph.solverdata.iterations += 1
-
     if ph.parameters.log
         ProgressMeter.update!(ph.progress,δ,
                               showvalues = [
@@ -80,15 +75,15 @@ function check_optimality(ph::AbstractProgressiveHedgingSolver)
 end
 # ======================================================================== #
 function show(io::IO, ph::AbstractProgressiveHedgingSolver)
-    println(io,typeof(ph).name.name)
-    println(io,"State:")
-    show(io,ph.solverdata)
-    println(io,"Parameters:")
-    show(io,ph.parameters)
+    println(io, typeof(ph).name.name)
+    println(io, "State:")
+    show(io, ph.solverdata)
+    println(io, "Parameters:")
+    show(io, ph.parameters)
 end
 
 function show(io::IO, ::MIME"text/plain", ph::AbstractProgressiveHedgingSolver)
-    show(io,ph)
+    show(io, ph)
 end
 # ======================================================================== #
 

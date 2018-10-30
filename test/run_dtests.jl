@@ -1,4 +1,5 @@
 using Test
+using LinearAlgebra
 using Distributed
 using Logging
 include("/usr/share/julia/test/testenv.jl")
@@ -15,7 +16,7 @@ reference_solver = GurobiSolver(OutputFlag=0)
 dphsolvers = [(ProgressiveHedgingSolver(:dph,GurobiSolver(OutputFlag=0),log=false),"Progressive Hedging")]
 phsolvers = [(ProgressiveHedgingSolver(:ph,GurobiSolver(OutputFlag=0),log=false),"Progressive Hedging")]
 
-problems = Vector{Tuple{JuMP.Model,String}}()
+problems = Vector{Tuple{<:StochasticProgram,String}}()
 @info "Loading test problems..."
 @info "Loading simple..."
 include("simple.jl")
@@ -25,33 +26,34 @@ include("farmer.jl")
 include("infeasible.jl")
 @info "Loading integer..."
 include("integer.jl")
-
 @info "Test problems loaded. Starting test sequence."
-@testset "Distributed $phname Solver with Distributed Data: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
-    solve(sp,solver=reference_solver)
-    x̄ = copy(sp.colVal)
-    Q̄ = copy(sp.objVal)
-    solve(sp,solver=phsolver)
-    @test abs(optimal_value(sp) - Q̄) <= τ*(1e-10+abs(Q̄))
-end
 
-@testset "Distributed $phname Solver: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
-    sp_nondist = StochasticProgram(first_stage_data(sp),second_stage_data(sp),scenarios(sp),procs=[1])
-    transfer_model!(stochastic(sp_nondist),stochastic(sp))
-    generate!(sp_nondist)
-    solve(sp_nondist,solver=reference_solver)
-    x̄ = copy(sp_nondist.colVal)
-    Q̄ = copy(sp_nondist.objVal)
-    solve(sp_nondist,solver=phsolver)
-    @test abs(optimal_value(sp_nondist) - Q̄) <= τ*(1e-10+abs(Q̄))
-end
-
-@testset "$phname Solver with Distributed Data: $name" for (phsolver,phname) in phsolvers, (sp,name) in problems
-    solve(sp,solver=reference_solver)
-    x̄ = copy(sp.colVal)
-    Q̄ = copy(sp.objVal)
-    with_logger(NullLogger()) do
-        solve(sp,solver=phsolver)
+@testset "Distributed solver" begin
+    @testset "Distributed $phname Solver with Distributed Data: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
+        optimize!(sp, solver=reference_solver)
+        x̄ = optimal_decision(sp)
+        Q̄ = optimal_value(sp)
+        optimize!(sp, solver=phsolver)
+        @test abs(optimal_value(sp) - Q̄) <= τ*(1e-10+abs(Q̄))
+        @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
     end
-    @test abs(optimal_value(sp) - Q̄) <= τ*(1e-10+abs(Q̄))
+    @testset "Distributed $phname Solver: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
+        sp_nondist = copy(sp, procs=[1])
+        optimize!(sp_nondist, solver=reference_solver)
+        x̄ = optimal_decision(sp_nondist)
+        Q̄ = optimal_value(sp_nondist)
+        optimize!(sp_nondist, solver=phsolver)
+        @test abs(optimal_value(sp_nondist) - Q̄) <= τ*(1e-10+abs(Q̄))
+        @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
+    end
+    @testset "$phname Solver with Distributed Data: $name" for (phsolver,phname) in phsolvers, (sp,name) in problems
+        optimize!(sp, solver=reference_solver)
+        x̄ = optimal_decision(sp)
+        Q̄ = optimal_value(sp)
+        with_logger(NullLogger()) do
+            optimize!(sp,solver=phsolver)
+        end
+        @test abs(optimal_value(sp) - Q̄) <= τ*(1e-10+abs(Q̄))
+        @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
+    end
 end

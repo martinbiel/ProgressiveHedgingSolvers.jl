@@ -34,23 +34,23 @@ struct ProgressiveHedgingSolver <: AbstractStructuredSolver
     parameters
 
     function (::Type{ProgressiveHedgingSolver})(variant::Symbol, qpsolver::MPB.AbstractMathProgSolver; crash::Crash.CrashMethod = Crash.None(), kwargs...)
-        return new(variant,qpsolver,crash,kwargs)
+        return new(variant, qpsolver, crash, kwargs)
     end
 end
 ProgressiveHedgingSolver(subsolver::MPB.AbstractMathProgSolver; kwargs...) = ProgressiveHedgingSolver(:ph, subsolver, kwargs...)
 
-function StructuredModel(solver::ProgressiveHedgingSolver,stochasticprogram::JuMP.Model)
+function StructuredModel(stochasticprogram::StochasticProgram, solver::ProgressiveHedgingSolver)
     x₀ = solver.crash(stochasticprogram,solver.qpsolver)
     if solver.variant == :ph
-        return ProgressiveHedging(stochasticprogram,x₀,solver.qpsolver; solver.parameters...)
+        return ProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
     elseif solver.variant == :dph
-        return DProgressiveHedging(stochasticprogram,x₀,solver.qpsolver; solver.parameters...)
+        return DProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
     else
         error("Unknown progressive hedging variant: ", solver.variant)
     end
 end
 
-function optimsolver(solver::ProgressiveHedgingSolver)
+function internal_solver(solver::ProgressiveHedgingSolver)
     return solver.qpsolver
 end
 
@@ -58,10 +58,11 @@ function optimize_structured!(ph::AbstractProgressiveHedgingSolver)
     return ph()
 end
 
-function fill_solution!(ph::AbstractProgressiveHedgingSolver,stochasticprogram::JuMP.Model)
+function fill_solution!(stochasticprogram::StochasticProgram, ph::AbstractProgressiveHedgingSolver)
     # First stage
-    nrows, ncols = length(stochasticprogram.linconstr), stochasticprogram.numCols
-    stochasticprogram.colVal = copy(ph.ξ)
+    first_stage = StochasticPrograms.get_stage_one(stochasticprogram)
+    nrows, ncols = first_stage_dims(stochasticprogram)
+    StochasticPrograms.set_decision!(stochasticprogram, ph.ξ)
     # stochasticprogram.redCosts = try
     #     getreducedcosts(ph.mastersolver.lqmodel)[1:ncols]
     # catch
@@ -73,7 +74,15 @@ function fill_solution!(ph::AbstractProgressiveHedgingSolver,stochasticprogram::
     #     fill(NaN, nrows)
     # end
     # Second stage
-    fill_submodels!(ph,scenarioproblems(stochasticprogram))
-    # Now safe to generate the objective value of the stochastic program
-    stochasticprogram.objVal = calculate_objective_value(stochasticprogram)
+    fill_submodels!(ph, scenarioproblems(stochasticprogram))
+end
+
+function solverstr(solver::ProgressiveHedgingSolver)
+    if solver.variant == :ph
+        return "Progressive-hedging"
+    elseif solver.variant == :dph
+        return "Distributed progressive-hedging"
+    else
+        error("Unknown progressive-hedging variant: ", solver.variant)
+    end
 end
