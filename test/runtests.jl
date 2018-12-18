@@ -7,7 +7,8 @@ using Gurobi
 
 τ = 1e-5
 reference_solver = GurobiSolver(OutputFlag=0)
-phsolvers = [(ProgressiveHedgingSolver(:ph,GurobiSolver(OutputFlag=0),log=false),"Progressive Hedging")]
+phsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), log=false), "Progressive Hedging"),
+             (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty=:adaptive, θ = 1.01, log=false), "Adaptive Progressive Hedging")]
 
 problems = Vector{Tuple{<:StochasticProgram,String}}()
 @info "Loading test problems..."
@@ -22,11 +23,11 @@ include("integer.jl")
 
 @testset "Sequential solver" begin
     @testset "$phname Solver: $name" for (phsolver,phname) in phsolvers, (sp,name) in problems
-        optimize!(sp,solver=reference_solver)
+        optimize!(sp, solver = reference_solver)
         x̄ = optimal_decision(sp)
         Q̄ = optimal_value(sp)
         optimize!(sp,solver=phsolver)
-        @test abs(optimal_value(sp) - Q̄) <= τ*(1e-10+abs(Q̄))
+        @test abs(optimal_value(sp) - Q̄)/(1e-10+abs(Q̄)) <= τ
         @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
     end
 end

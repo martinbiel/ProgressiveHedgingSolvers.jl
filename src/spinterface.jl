@@ -1,17 +1,18 @@
 """
-    ProgressiveHedgingSolver(variant::Symbol = :ph, qpsolver::AbstractMathProgSolver; <keyword arguments>)
+    ProgressiveHedgingSolver(qpsolver::AbstractMathProgSolver; <keyword arguments>)
 
-Return the progressive-hedging algorithm object specified by the `variant` symbol. Supply `qpsolver`, a MathProgBase solver capable of solving quadratic problems.
+Return a progressive-hedging algorithm object specified. Supply `qpsolver`, a MathProgBase solver capable of solving quadratic problems.
 
-The available algorithm variants are as follows
-- `:ph`:  Progressive-hedging algorithm (default) ?ProgressiveHedging for parameter descriptions.
-- `:dph`: Distributed progressive-hedging algorithm (requires worker cores) ?DProgressiveHedging for parameter descriptions.
+The following penalty parameter update procedures are available
+- `:none`:  Fixed penalty (default) ?ProgressiveHedging for parameter descriptions.
+- `:adaptive`: Adaptive penalty update ?AdaptiveProgressiveHedging for parameter descriptions.
 
 ...
 # Arguments
-- `variant::Symbol = :ph`: progressive-hedging algorithm variant.
 - `qpsolver::AbstractMathProgSolver`: MathProgBase solver capable of solving quadratic programs.
 - `crash::Crash.CrashMethod = Crash.None`: Crash method used to generate an initial decision. See ?Crash for alternatives.
+- `penalty::Symbol = :none`: Specify penalty update procedure (:none, :adaptive)
+- `distributed::Bool = false`: Specify if distributed variant of algorithm should be run (requires worker cores). See `?Alg` for parameter descriptions.
 - <keyword arguments>: Algorithm specific parameters, consult individual docstrings (see above list) for list of possible arguments and default values.
 ...
 
@@ -20,7 +21,7 @@ The available algorithm variants are as follows
 The following solves a stochastic program `sp` created in `StochasticPrograms.jl` using the progressive-hedging algorithm with Ipopt as an `qpsolver`.
 
 ```jldoctest
-julia> solve(sp,solver=ProgressiveHedgingSolver(:ph, IpoptSolver(print_level=0)))
+julia> solve(sp,solver=ProgressiveHedgingSolver(IpoptSolver(print_level=0)))
 Progressive Hedging Time: 0:00:06 (1315 iterations)
   Objective:  -855.8332803469432
   δ:          9.436947935542464e-7
@@ -28,25 +29,33 @@ Progressive Hedging Time: 0:00:06 (1315 iterations)
 ```
 """
 struct ProgressiveHedgingSolver <: AbstractStructuredSolver
-    variant::Symbol
     qpsolver::MPB.AbstractMathProgSolver
     crash::Crash.CrashMethod
+    penalty::Symbol
+    distributed::Bool
     parameters
 
-    function (::Type{ProgressiveHedgingSolver})(variant::Symbol, qpsolver::MPB.AbstractMathProgSolver; crash::Crash.CrashMethod = Crash.None(), kwargs...)
-        return new(variant, qpsolver, crash, kwargs)
+    function (::Type{ProgressiveHedgingSolver})(qpsolver::MPB.AbstractMathProgSolver; crash::Crash.CrashMethod = Crash.None(), penalty = :fixed, distributed = false, kwargs...)
+        return new(qpsolver, crash, penalty, distributed, kwargs)
     end
 end
-ProgressiveHedgingSolver(subsolver::MPB.AbstractMathProgSolver; kwargs...) = ProgressiveHedgingSolver(:ph, subsolver, kwargs...)
 
 function StructuredModel(stochasticprogram::StochasticProgram, solver::ProgressiveHedgingSolver)
     x₀ = solver.crash(stochasticprogram,solver.qpsolver)
-    if solver.variant == :ph
-        return ProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
-    elseif solver.variant == :dph
-        return DProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
+    if solver.penalty == :fixed
+        if solver.distributed
+            return DProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
+        else
+            return ProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
+        end
+    elseif solver.penalty == :adaptive
+        if solver.distributed
+            return DAdaptiveProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
+        else
+            return AdaptiveProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
+        end
     else
-        error("Unknown progressive hedging variant: ", solver.variant)
+        error("Unknown progressive hedging penalty: ", solver.penalty)
     end
 end
 

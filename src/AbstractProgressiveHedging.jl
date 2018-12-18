@@ -9,6 +9,8 @@ function init!(ph::AbstractProgressiveHedgingSolver, subsolver::MPB.AbstractMath
     ph.progress.thresh = ph.parameters.τ
     # Finish initialization based on solver traits
     init_subproblems!(ph, subsolver)
+    # Initialize penalty parameter (if applicable)
+    init_penalty!(ph)
 end
 # ======================================================================== #
 
@@ -44,6 +46,15 @@ function iterate!(ph::AbstractProgressiveHedgingSolver)
     ph.solverdata.Q = Q
     # Update iterate
     update_iterate!(ph)
+    # Update subproblems
+    update_subproblems!(ph)
+    # Get dual gap
+    update_dual_gap!(ph)
+    # Update penalty (if applicable)
+    update_penalty!(ph)
+    # Update progress
+    @unpack δ₁, δ₂ = ph.solverdata
+    ph.solverdata.δ = sqrt(δ₁ + δ₂)/(1e-10+norm(ph.ξ,2))
     # Log progress
     log!(ph)
     # Check optimality
@@ -56,8 +67,9 @@ function iterate!(ph::AbstractProgressiveHedgingSolver)
 end
 
 function log!(ph::AbstractProgressiveHedgingSolver)
-    @unpack Q,δ = ph.solverdata
+    @unpack Q, δ, δ₂ = ph.solverdata
     push!(ph.Q_history, Q)
+    push!(ph.dual_gaps, δ₂)
     ph.solverdata.iterations += 1
     if ph.parameters.log
         ProgressMeter.update!(ph.progress,δ,

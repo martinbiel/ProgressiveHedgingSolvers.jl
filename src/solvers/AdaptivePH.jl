@@ -1,19 +1,29 @@
-@with_kw mutable struct ProgressiveHedgingData{T <: Real}
+@with_kw mutable struct AdaptiveProgressiveHedgingData{T <: Real}
     Q::T = 1e10
+    r::T = 1.0
     δ::T = 1.0
     δ₁::T = 1.0
     δ₂::T = 1.0
     iterations::Int = 0
 end
 
-@with_kw mutable struct ProgressiveHedgingParameters{T <: Real}
-    r::T = 1.0
+@with_kw mutable struct AdaptiveProgressiveHedgingParameters{T <: Real}
+    ζ::T = 0.1
+    γ₁::T = 1e-5
+    γ₂::T = 0.01
+    γ₃::T = 0.25
+    σ::T = 1e-5
+    α::T = 0.95
+    θ::T = 1.1
+    ν::T = 0.1
+    β::T = 1.1
+    η::T = 1.25
     τ::T = 1e-6
     log::Bool = true
 end
 
 """
-    ProgressiveHedging
+    AdaptiveProgressiveHedging
 
 Functor object for the progressive-hedging algorithm. Create by supplying `:ph` to the `ProgressiveHedgingSolver` factory function and then pass to a `StochasticPrograms.jl` model.
 
@@ -24,9 +34,9 @@ Functor object for the progressive-hedging algorithm. Create by supplying `:ph` 
 - `log::Bool = true`: Specifices if progressive-hedging procedure should be logged on standard output or not.
 ...
 """
-struct ProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgram, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
+struct AdaptiveProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgram, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
     stochasticprogram::SP
-    solverdata::ProgressiveHedgingData{T}
+    solverdata::AdaptiveProgressiveHedgingData{T}
 
     # Estimate
     c::A
@@ -39,12 +49,12 @@ struct ProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgra
     subproblems::Vector{SubProblem{T,A,S}}
 
     # Params
-    parameters::ProgressiveHedgingParameters{T}
+    parameters::AdaptiveProgressiveHedgingParameters{T}
     progress::ProgressThresh{T}
 
-    @implement_trait ProgressiveHedging Fixed
+    @implement_trait AdaptiveProgressiveHedging Adaptive
 
-    function (::Type{ProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
+    function (::Type{AdaptiveProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
         if nworkers() > 1
             @warn "There are worker processes, consider using distributed version of algorithm"
         end
@@ -61,23 +71,23 @@ struct ProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgra
         n = StochasticPrograms.nscenarios(stochasticprogram)
 
         ph = new{T,A,SP,S}(stochasticprogram,
-                           ProgressiveHedgingData{T}(),
+                           AdaptiveProgressiveHedgingData{T}(),
                            c_,
                            x₀_,
                            A(),
                            A(),
                            n,
                            Vector{SubProblem{T,A,S}}(),
-                           ProgressiveHedgingParameters{T}(;kw...),
+                           AdaptiveProgressiveHedgingParameters{T}(;kw...),
                            ProgressThresh(1.0, "Progressive Hedging"))
         # Initialize solver
         init!(ph, subsolver)
         return ph
     end
 end
-ProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = ProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
+AdaptiveProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = AdaptiveProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
 
-function (ph::ProgressiveHedging)()
+function (ph::AdaptiveProgressiveHedging)()
     # Reset timer
     ph.progress.tfirst = ph.progress.tlast = time()
     # Start procedure
