@@ -1,4 +1,4 @@
-@with_kw mutable struct DProgressiveHedgingData{T <: Real}
+@with_kw mutable struct SynchronousProgressiveHedgingData{T <: Real}
     Q::T = 1e10
     δ::T = 1.0
     δ₁::T = 1.0
@@ -6,14 +6,14 @@
     iterations::Int = 0
 end
 
-@with_kw mutable struct DProgressiveHedgingParameters{T <: Real}
+@with_kw mutable struct SynchronousProgressiveHedgingParameters{T <: Real}
     r::T = 1.0
     τ::T = 1e-6
     log::Bool = true
 end
 
 """
-    DProgressiveHedging
+    SynchronousProgressiveHedging
 
 Functor object for the progressive-hedging algorithm. Create by supplying `:ph` to the `ProgressiveHedgingSolver` factory function and then pass to a `StochasticPrograms.jl` model, assuming there are available worker cores.
 
@@ -24,9 +24,9 @@ Functor object for the progressive-hedging algorithm. Create by supplying `:ph` 
 - `log::Bool = true`: Specifices if progressive-hedging procedure should be logged on standard output or not.
 ...
 """
-struct DProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgram, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
+struct SynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgram, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
     stochasticprogram::SP
-    solverdata::DProgressiveHedgingData{T}
+    solverdata::SynchronousProgressiveHedgingData{T}
 
     # Estimate
     c::A
@@ -39,13 +39,13 @@ struct DProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgr
     subworkers::Vector{SubWorker{T,A,S}}
 
     # Params
-    parameters::DProgressiveHedgingParameters{T}
+    parameters::SynchronousProgressiveHedgingParameters{T}
     progress::ProgressThresh{T}
 
-    @implement_trait DProgressiveHedging Fixed
-    @implement_trait DProgressiveHedging Parallel
+    @implement_trait SynchronousProgressiveHedging Fixed
+    @implement_trait SynchronousProgressiveHedging Synchronous
 
-    function (::Type{DProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
+    function (::Type{SynchronousProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
         if nworkers() == 1
             @warn "There are no worker processes, defaulting to serial version of algorithm"
             return ProgressiveHedging(stochasticprogram, x₀, subsolver; kw...)
@@ -63,23 +63,23 @@ struct DProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgr
         n = StochasticPrograms.nscenarios(stochasticprogram)
 
         ph = new{T,A,SP,S}(stochasticprogram,
-                           DProgressiveHedgingData{T}(),
+                           SynchronousProgressiveHedgingData{T}(),
                            c_,
                            x₀_,
                            A(),
                            A(),
                            n,
                            Vector{SubWorker{T,A,S}}(undef, nworkers()),
-                           DProgressiveHedgingParameters{T}(;kw...),
+                           SynchronousProgressiveHedgingParameters{T}(;kw...),
                            ProgressThresh(1.0, "Distributed Progressive Hedging "))
         # Initialize solver
         init!(ph, subsolver)
         return ph
     end
 end
-DProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = DProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
+SynchronousProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = SynchronousProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
 
-function (ph::DProgressiveHedging)()
+function (ph::SynchronousProgressiveHedging)()
     # Reset timer
     ph.progress.tfirst = ph.progress.tlast = time()
     # Start procedure

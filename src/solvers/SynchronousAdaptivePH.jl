@@ -1,4 +1,4 @@
-@with_kw mutable struct DAdaptiveProgressiveHedgingData{T <: Real}
+@with_kw mutable struct SynchronousAdaptiveProgressiveHedgingData{T <: Real}
     Q::T = 1e10
     r::T = 1.0
     δ::T = 1.0
@@ -7,7 +7,7 @@
     iterations::Int = 0
 end
 
-@with_kw mutable struct DAdaptiveProgressiveHedgingParameters{T <: Real}
+@with_kw mutable struct SynchronousAdaptiveProgressiveHedgingParameters{T <: Real}
     ζ::T = 0.1
     γ₁::T = 1e-5
     γ₂::T = 0.01
@@ -23,7 +23,7 @@ end
 end
 
 """
-    DAdaptiveProgressiveHedging
+    SynchronousAdaptiveProgressiveHedging
 
 Functor object for the progressive-hedging algorithm. Create by supplying `:ph` to the `ProgressiveHedgingSolver` factory function and then pass to a `StochasticPrograms.jl` model.
 
@@ -34,9 +34,9 @@ Functor object for the progressive-hedging algorithm. Create by supplying `:ph` 
 - `log::Bool = true`: Specifices if progressive-hedging procedure should be logged on standard output or not.
 ...
 """
-struct DAdaptiveProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgram, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
+struct SynchronousAdaptiveProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgram, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
     stochasticprogram::SP
-    solverdata::DAdaptiveProgressiveHedgingData{T}
+    solverdata::SynchronousAdaptiveProgressiveHedgingData{T}
 
     # Estimate
     c::A
@@ -49,13 +49,13 @@ struct DAdaptiveProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stochas
     subworkers::Vector{SubWorker{T,A,S}}
 
     # Params
-    parameters::DAdaptiveProgressiveHedgingParameters{T}
+    parameters::SynchronousAdaptiveProgressiveHedgingParameters{T}
     progress::ProgressThresh{T}
 
-    @implement_trait DAdaptiveProgressiveHedging Adaptive
-    @implement_trait DAdaptiveProgressiveHedging Parallel
+    @implement_trait SynchronousAdaptiveProgressiveHedging Adaptive
+    @implement_trait SynchronousAdaptiveProgressiveHedging Synchronous
 
-    function (::Type{DAdaptiveProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
+    function (::Type{SynchronousAdaptiveProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
         if nworkers() == 1
             @warn "There are no worker processes, defaulting to serial version of algorithm"
             return AdaptiveProgressiveHedging(stochasticprogram, x₀, subsolver; kw...)
@@ -73,23 +73,23 @@ struct DAdaptiveProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stochas
         n = StochasticPrograms.nscenarios(stochasticprogram)
 
         ph = new{T,A,SP,S}(stochasticprogram,
-                           DAdaptiveProgressiveHedgingData{T}(),
+                           SynchronousAdaptiveProgressiveHedgingData{T}(),
                            c_,
                            x₀_,
                            A(),
                            A(),
                            n,
                            Vector{SubWorker{T,A,S}}(undef, nworkers()),
-                           DAdaptiveProgressiveHedgingParameters{T}(;kw...),
+                           SynchronousAdaptiveProgressiveHedgingParameters{T}(;kw...),
                            ProgressThresh(1.0, "Progressive Hedging"))
         # Initialize solver
         init!(ph, subsolver)
         return ph
     end
 end
-DAdaptiveProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = DAdaptiveProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
+SynchronousAdaptiveProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = SynchronousAdaptiveProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
 
-function (ph::DAdaptiveProgressiveHedging)()
+function (ph::SynchronousAdaptiveProgressiveHedging)()
     # Reset timer
     ph.progress.tfirst = ph.progress.tlast = time()
     # Start procedure

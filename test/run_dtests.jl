@@ -13,8 +13,8 @@ using Gurobi
 
 τ = 1e-5
 reference_solver = GurobiSolver(OutputFlag=0)
-dphsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), distributed = true, log=false),"Progressive Hedging"),
-              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, distributed = true, θ = 1.01, log=false), "Adaptive Progressive Hedging")]
+dphsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), execution = :synchronous, log=false),"Progressive Hedging"),
+              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, execution = :synchronous, θ = 1.01, log=false), "Adaptive Progressive Hedging")]
 phsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), log=false),"Progressive Hedging"),
              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, θ = 1.01, log=false), "Adaptive Progressive Hedging")]
 

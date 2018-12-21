@@ -7,12 +7,16 @@ The following penalty parameter update procedures are available
 - `:none`:  Fixed penalty (default) ?ProgressiveHedging for parameter descriptions.
 - `:adaptive`: Adaptive penalty update ?AdaptiveProgressiveHedging for parameter descriptions.
 
+The following execution policies are available
+- `:sequential`:  Classical progressive-hedging (default) ?ProgressiveHedging for parameter descriptions.
+- `:synchronous`: Classical progressive-hedging run in parallel ?SynchronousProgressiveHedging for parameter descriptions.
+- `:asynchronous`: Asynchronous progressive-hedging ?AsynchronousPH for parameter descriptions.
+
 ...
 # Arguments
 - `qpsolver::AbstractMathProgSolver`: MathProgBase solver capable of solving quadratic programs.
-- `crash::Crash.CrashMethod = Crash.None`: Crash method used to generate an initial decision. See ?Crash for alternatives.
 - `penalty::Symbol = :none`: Specify penalty update procedure (:none, :adaptive)
-- `distributed::Bool = false`: Specify if distributed variant of algorithm should be run (requires worker cores). See `?Alg` for parameter descriptions.
+- `execution::Symbol = :sequential`: Specify how algorithm should be executed (:sequential, :synchronous, :asynchronous). Distributed variants requires worker cores.
 - <keyword arguments>: Algorithm specific parameters, consult individual docstrings (see above list) for list of possible arguments and default values.
 ...
 
@@ -30,32 +34,38 @@ Progressive Hedging Time: 0:00:06 (1315 iterations)
 """
 struct ProgressiveHedgingSolver <: AbstractStructuredSolver
     qpsolver::MPB.AbstractMathProgSolver
-    crash::Crash.CrashMethod
     penalty::Symbol
-    distributed::Bool
+    execution::Symbol
     parameters
 
-    function (::Type{ProgressiveHedgingSolver})(qpsolver::MPB.AbstractMathProgSolver; crash::Crash.CrashMethod = Crash.None(), penalty = :fixed, distributed = false, kwargs...)
-        return new(qpsolver, crash, penalty, distributed, kwargs)
+    function (::Type{ProgressiveHedgingSolver})(qpsolver::MPB.AbstractMathProgSolver; crash::Crash.CrashMethod = Crash.None(), penalty = :fixed, execution = :sequential, kwargs...)
+        return new(qpsolver, penalty, execution, kwargs)
     end
 end
 
 function StructuredModel(stochasticprogram::StochasticProgram, solver::ProgressiveHedgingSolver)
-    x₀ = solver.crash(stochasticprogram,solver.qpsolver)
     if solver.penalty == :fixed
-        if solver.distributed
-            return DProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
+        if solver.execution == :synchronous
+            return SynchronousProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
+        elseif solver.execution == :asynchronous
+            return AsynchronousProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
+        elseif solver.execution == :sequential
+            return ProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
         else
-            return ProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
+            error("Unknown execution: ", solver.execution)
         end
     elseif solver.penalty == :adaptive
-        if solver.distributed
-            return DAdaptiveProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
+        if solver.execution == :synchronous
+            return SynchronousAdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
+        elseif solver.execution == :asynchronous
+            return AdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
+        elseif solver.execution == :sequential
+            return AdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
         else
-            return AdaptiveProgressiveHedging(stochasticprogram, x₀, solver.qpsolver; solver.parameters...)
+            error("Unknown execution: ", solver.execution)
         end
     else
-        error("Unknown progressive hedging penalty: ", solver.penalty)
+        error("Unknown penalty procedure: ", solver.penalty)
     end
 end
 

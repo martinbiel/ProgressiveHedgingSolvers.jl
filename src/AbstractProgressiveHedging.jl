@@ -35,7 +35,7 @@ function get_objective_value(ph::AbstractProgressiveHedgingSolver)
     end
 end
 
-function iterate!(ph::AbstractProgressiveHedgingSolver)
+function iterate_nominal!(ph::AbstractProgressiveHedgingSolver)
     # Resolve all subproblems at the current optimal solution
     Q = resolve_subproblems!(ph)
     if Q == Inf

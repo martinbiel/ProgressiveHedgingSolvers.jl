@@ -1,7 +1,10 @@
 # ------------------------------------------------------------
 # Parallel -> Algorithm is run in parallel
 # ------------------------------------------------------------
-@define_trait Parallel
+@define_trait Parallel = begin
+    Synchronous
+    Asynchronous
+end
 
 @define_traitfn Parallel init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::MPB.AbstractMathProgSolver) where {T <: Real, A <: AbstractVector, S <: LQSolver} = begin
     function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::MPB.AbstractMathProgSolver, !Parallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
@@ -41,7 +44,22 @@
         ph.parameters.log = log_val
         # Ensure initialization is finished
         map(wait, active_workers)
+        update_iterate!(ph)
         return ph
+    end
+end
+
+@define_traitfn Parallel iterate!(ph::AbstractProgressiveHedgingSolver) = begin
+    function iterate!(ph::AbstractProgressiveHedgingSolver, !Parallel)
+        iterate_nominal!(ph)
+    end
+
+    function iterate!(ph::AbstractProgressiveHedgingSolver, Synchronous)
+        iterate_nominal!(ph)
+    end
+
+    function iterate!(ph::AbstractProgressiveHedgingSolver, Asynchronous)
+        iterate_async!(ph)
     end
 end
 
@@ -57,15 +75,6 @@ end
         # Return current objective value
         return sum(Qs)
     end
-
-    function resolve_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A}, Parallel) where {T <: Real, A <: AbstractVector}
-        active_workers = Vector{Future}(undef, nworkers())
-        for w in workers()
-            active_workers[w-1] = remotecall(resolve_subproblems!, w, ph.subworkers[w-1], ph.ξ, penalty(ph))
-        end
-        map(wait, active_workers)
-        return sum(map(fetch, active_workers))
-    end
 end
 
 @define_traitfn Parallel update_iterate!(ph::AbstractProgressiveHedgingSolver) = begin
@@ -77,18 +86,6 @@ end
         ph.solverdata.δ₁ = norm(ph.ξ-ξ_prev, 2)^2
         return nothing
     end
-
-    function update_iterate!(ph::AbstractProgressiveHedgingSolver, Parallel)
-        active_workers = Vector{Future}(undef, nworkers())
-        for w in workers()
-            active_workers[w-1] = remotecall(collect_primals, w, ph.subworkers[w-1], length(ph.ξ))
-        end
-        map(wait, active_workers)
-        ξ_prev = copy(ph.ξ)
-        ph.ξ[:] = sum(fetch.(active_workers))
-        # Update δ₁
-        ph.solverdata.δ₁ = norm(ph.ξ-ξ_prev, 2)^2
-    end
 end
 
 @define_traitfn Parallel update_subproblems!(ph::AbstractProgressiveHedgingSolver) = begin
@@ -97,35 +94,16 @@ end
         update_subproblems!(ph.subproblems, ph.ξ, penalty(ph))
         return nothing
     end
-
-    function update_subproblems!(ph::AbstractProgressiveHedgingSolver, Parallel)
-        active_workers = Vector{Future}(undef, nworkers())
-        # Update dual prices
-        for w in workers()
-            active_workers[w-1] = remotecall((sw,ξ,r)->begin
-                                                 subproblems = fetch(sw)
-                                                 if length(subproblems) > 0
-                                                     update_subproblems!(subproblems, ξ, r)
-                                                 end
-                                             end,
-                                             w,
-                                             ph.subworkers[w-1],
-                                             ph.ξ,
-                                             penalty(ph))
-        end
-        map(wait, active_workers)
-        return nothing
-    end
 end
 
-@define_traitfn Parallel update_dual_gap!(ph::AbstractProgressiveHedgingSolver) = begin
-    function update_dual_gap!(ph::AbstractProgressiveHedgingSolver, !Parallel)
+@define_traitfn Parallel update_dual_gap!(ph::AbstractProgressiveHedgingSolver{T}) where T <: Real = begin
+    function update_dual_gap!(ph::AbstractProgressiveHedgingSolver{T}, !Parallel) where T <: Real
         # Update δ₂
         ph.solverdata.δ₂ = sum([s.π*norm(s.x-ph.ξ,2)^2 for s in ph.subproblems])
         return nothing
     end
 
-    function update_dual_gap!(ph::AbstractProgressiveHedgingSolver, Parallel)
+   function update_dual_gap!(ph::AbstractProgressiveHedgingSolver{T}, Parallel) where T <: Real
         active_workers = Vector{Future}(undef, nworkers())
         # Update δ₂
         for w in workers()
@@ -134,7 +112,7 @@ end
                                                  if length(subproblems) > 0
                                                      return sum([s.π*norm(s.x-ξ,2)^2 for s in subproblems])
                                                  else
-                                                     return zero(eltype(ξ))
+                                                     return zero(T)
                                                  end
                                              end,
                                              w,
@@ -147,12 +125,12 @@ end
     end
 end
 
-@define_traitfn Parallel calculate_objective_value(ph::AbstractProgressiveHedgingSolver) = begin
-    function calculate_objective_value(ph::AbstractProgressiveHedgingSolver, !Parallel)
+@define_traitfn Parallel calculate_objective_value(ph::AbstractProgressiveHedgingSolver{T}) where T <: Real = begin
+    function calculate_objective_value(ph::AbstractProgressiveHedgingSolver{T}, !Parallel) where T <: Real
         return sum([get_objective_value(s) for s in ph.subproblems])
     end
 
-    function calculate_objective_value(ph::AbstractProgressiveHedgingSolver, Parallel)
+    function calculate_objective_value(ph::AbstractProgressiveHedgingSolver{T}, Parallel) where T <: Real
         active_workers = Vector{Future}(undef, nworkers())
         # Update δ₂
         for w in workers()
@@ -161,7 +139,7 @@ end
                                                  if length(subproblems) > 0
                                                      return sum([get_objective_value(s) for s in subproblems])
                                                  else
-                                                     return 0.0
+                                                     return zero(T)
                                                  end
                                              end,
                                              w,
@@ -169,30 +147,6 @@ end
         end
         map(wait, active_workers)
         return sum(fetch.(active_workers))
-    end
-end
-
-@define_traitfn Parallel init_workers!(ph::AbstractProgressiveHedgingSolver) = begin
-    function init_workers!(ph::AbstractProgressiveHedgingSolver, Parallel)
-        active_workers = Vector{Future}(undef, nworkers())
-        for w in workers()
-            active_workers[w-1] = remotecall(work_on_subproblems!,
-                                             w,
-                                             ph.subworkers[w-1],
-                                             ph.work[w-1],
-                                             ph.cutqueue,
-                                             ph.decisions)
-        end
-        return active_workers
-    end
-end
-
-@define_traitfn Parallel close_workers!(ph::AbstractProgressiveHedgingSolver, workers::Vector{Future}) = begin
-    function close_workers!(ph::AbstractProgressiveHedgingSolver, workers::Vector{Future}, Parallel)
-        @async begin
-            close(ph.cutqueue)
-            map(wait, workers)
-        end
     end
 end
 
@@ -338,25 +292,6 @@ function init_subworker!(subworker::SubWorker{T,A,S},
                                     subsolver)
     end
     put!(subworker, subproblems)
-end
-
-function resolve_subproblems!(subworker::SubWorker{T,A,S}, ξ::AbstractVector, r::AbstractFloat) where {T <: Real, A <: AbstractArray, S <: LQSolver}
-    subproblems::Vector{SubProblem{T,A,S}} = fetch(subworker)
-    Qs = A(undef, length(subproblems))
-    for (i,subproblem) ∈ enumerate(subproblems)
-        reformulate_subproblem!(subproblem, ξ, r)
-        Qs[i] = subproblem()
-    end
-    return sum(Qs)
-end
-
-function collect_primals(subworker::SubWorker{T,A,S}, n::Integer) where {T <: Real, A <: AbstractArray, S <: LQSolver}
-    subproblems::Vector{SubProblem{T,A,S}} = fetch(subworker)
-    if length(subproblems) > 0
-        return sum([subproblem.π*subproblem.x for subproblem in subproblems])
-    else
-        return zeros(T,n)
-    end
 end
 
 function fill_submodels!(subworker::SubWorker{T,A,S},
