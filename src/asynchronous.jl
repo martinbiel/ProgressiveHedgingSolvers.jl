@@ -13,7 +13,7 @@
     active_workers = Vector{Future}(undef, nworkers())
     for w in workers()
         ph.subworkers[w-1] = RemoteChannel(() -> Channel{Vector{SubProblem{T,A,S}}}(1), w)
-        active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], ph.ξ, start, stop, subsolver)
+        active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], start, stop, subsolver)
         if start > ph.nscenarios
             continue
         end
@@ -35,14 +35,7 @@
                                              return RemoteChannel(()->RunningAverageChannel(zeros(T,xdim), Vector{A}()), myid())
                                          end
                                      end, w, ph.subworkers[w-1], decision_length(m))
-        ph.ȳ[w-1] = remotecall_fetch((sw, xdim)->begin
-                                     subproblems = fetch(sw)
-                                         if length(subproblems) > 0
-                                             return RemoteChannel(()->RunningAverageChannel(zeros(T,xdim), [zero(s.ρ) for s in subproblems]), myid())
-                                         else
-                                             return RemoteChannel(()->RunningAverageChannel(zeros(T,xdim), Vector{A}()), myid())
-                                         end
-                                     end, w, ph.subworkers[w-1], decision_length(m))
+        ph.δ[w-1] = remotecall_fetch((sw, xdim)->RemoteChannel(()->RunningAverageChannel(zero(T), fill(zero(T),length(fetch(sw))))), w, ph.subworkers[w-1], decision_length(m))
         put!(ph.work[w-1], 1)
     end
     # Prepare memory
@@ -58,9 +51,15 @@ end
 
 @implement_traitfn function update_iterate!(ph::AbstractProgressiveHedgingSolver, Asynchronous)
     ξ_prev = copy(ph.ξ)
-    ph.ξ[:] = sum([fetch(x̄) for x̄ in ph.x̄])
+    ph.ξ[:] = sum(fetch.(ph.x̄))
     # Update δ₁
     ph.solverdata.δ₁ = norm(ph.ξ-ξ_prev, 2)^2
+    return nothing
+end
+
+@implement_traitfn function update_dual_gap!(ph::AbstractProgressiveHedgingSolver{T}, Asynchronous) where T <: Real
+    ph.solverdata.δ₂ = sum(fetch.(ph.δ))
+    return nothing
 end
 
 @define_traitfn Parallel init_workers!(ph::AbstractProgressiveHedgingSolver) = begin
@@ -75,11 +74,9 @@ end
                                                 ph.work[w-1],
                                                 ph.progressqueue,
                                                 ph.x̄[w-1],
-                                                ph.ȳ[w-1],
+                                                ph.δ[w-1],
                                                 ph.decisions,
-                                                ph.u,
-                                                ph.r,
-                                                ph.θ)
+                                                ph.r)
         end
         return nothing
     end
@@ -123,12 +120,12 @@ function wait(channel::IterationChannel, t)
     end
 end
 
-mutable struct RunningAverageChannel{A <: AbstractArray} <: AbstractChannel{A}
-    average::A
-    data::Vector{A}
-    buffer::Dict{Int,A}
+mutable struct RunningAverageChannel{D} <: AbstractChannel{D}
+    average::D
+    data::Vector{D}
+    buffer::Dict{Int,D}
     cond_put::Condition
-    RunningAverageChannel(average::A, data::Vector{A}) where A <: AbstractArray = new{A}(average, data, Dict{Int,A}(), Condition())
+    RunningAverageChannel(average::D, data::Vector{D}) where D = new{D}(average, data, Dict{Int,D}(), Condition())
 end
 
 function take!(channel::RunningAverageChannel, i::Integer)
@@ -143,7 +140,7 @@ function put!(channel::RunningAverageChannel, i::Integer, π::AbstractFloat)
     return channel
 end
 
-function put!(channel::RunningAverageChannel, i::Integer, x::AbstractArray, π::AbstractFloat)
+function put!(channel::RunningAverageChannel{D}, i::Integer, x::D, π::AbstractFloat) where D
     channel.average -= π*channel.buffer[i]
     channel.average += π*x
     channel.data[i] = copy(x)
@@ -171,7 +168,7 @@ end
 
 Work = RemoteChannel{Channel{Int}}
 IteratedValue{T <: AbstractFloat} = RemoteChannel{IterationChannel{T}}
-RunningAverage{A <: AbstractArray} = RemoteChannel{RunningAverageChannel{A}}
+RunningAverage{D} = RemoteChannel{RunningAverageChannel{D}}
 Decisions{A <: AbstractArray} = RemoteChannel{IterationChannel{A}}
 Progress{T <: AbstractFloat} = Tuple{Int,Int,T}
 ProgressQueue{T <: AbstractFloat} = RemoteChannel{Channel{Progress{T}}}
@@ -180,11 +177,9 @@ function work_on_subproblems!(subworker::SubWorker{T,A,S},
                               work::Work,
                               progress::ProgressQueue{T},
                               x̄::RunningAverage{A},
-                              ȳ::RunningAverage{A},
+                              δ::RunningAverage{T},
                               decisions::Decisions{A},
-                              ξ̄::Decisions{A},
-                              r::IteratedValue{T},
-                              θ::IteratedValue{T}) where {T <: Real, A <: AbstractArray, S <: LQSolver}
+                              r::IteratedValue{T}) where {T <: Real, A <: AbstractArray, S <: LQSolver}
     subproblems::Vector{SubProblem{T,A,S}} = fetch(subworker)
     if isempty(subproblems)
        # Workers has nothing do to, return.
@@ -211,12 +206,12 @@ function work_on_subproblems!(subworker::SubWorker{T,A,S},
         @sync for (i,subproblem) ∈ enumerate(subproblems)
             @async begin
                 take!(x̄, i)
-                take!(ȳ, i)
+                take!(δ, i)
                 reformulate_subproblem!(subproblem, ξ, fetch(r,t))
                 Q::T = subproblem()
                 put!(x̄, i, subproblem.π)
-                put!(ȳ, i, subproblem.ρ + fetch(r,t)*(subproblem.x - ξ), subproblem.π)
-                put!(progress, (t,i,Q))
+                put!(δ, i, norm(subproblem.x - ξ, 2)^2, subproblem.π)
+                put!(progress, (t,subproblem.id,Q))
             end
         end
     end
@@ -290,28 +285,11 @@ function iterate_async!(ph::AbstractProgressiveHedgingSolver{T}) where T <: Real
     # Project and generate new iterate
     t = ph.solverdata.iterations
     if ph.finished[t] >= ph.parameters.κ*nscenarios(ph)
-        # ph.v[:] = sum([fetch(ȳ) for ȳ in ph.ȳ])
-        # # Get dual gap
-        # update_dual_gap!(ph)
-        # # Calculate τ
-        # τ = ph.solverdata.δ₂ + norm(ph.v,2)^2
-        # if τ <= ph.parameters.τ
-        #     # Projections are zero, terminate
-        #     ph.ξ[:] = fetch(ph.decisions, t)
-        #     return :Optimal
-        # end
-        # @pack! ph.solverdata = τ
-        # # Calculate θ
-        # calculate_theta!(ph, t)
-        @unpack θ = ph.solverdata
         # Update iterate
         update_iterate!(ph)
         # Send new work to workers
-        # put!(ph.decisions, t+1, fetch(ph.decisions, t) + θ*ph.v)
         put!(ph.decisions, t+1, ph.ξ)
-        put!(ph.u, t+1, sum([fetch(x̄) for x̄ in ph.x̄]))
         put!(ph.r, t+1, penalty(ph))
-        put!(ph.θ, t+1, θ)
         map((w,aw)->!isready(aw) && put!(w,t+1), ph.work, ph.active_workers)
         # Prepare memory for next iteration
         push!(ph.subobjectives, zeros(nscenarios(ph)))

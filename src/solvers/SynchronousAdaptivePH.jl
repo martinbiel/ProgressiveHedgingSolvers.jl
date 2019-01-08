@@ -81,7 +81,7 @@ struct SynchronousAdaptiveProgressiveHedging{T <: Real, A <: AbstractVector, SP 
                            n,
                            Vector{SubWorker{T,A,S}}(undef, nworkers()),
                            SynchronousAdaptiveProgressiveHedgingParameters{T}(;kw...),
-                           ProgressThresh(1.0, "Progressive Hedging"))
+                           ProgressThresh(1.0, "Synchronous Adaptive Progressive Hedging"))
         # Initialize solver
         init!(ph, subsolver)
         return ph

@@ -29,7 +29,7 @@ end
         active_workers = Vector{Future}(undef, nworkers())
         for w in workers()
             ph.subworkers[w-1] = RemoteChannel(() -> Channel{Vector{SubProblem{T,A,S}}}(1), w)
-            active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], ph.ξ, start, stop, subsolver)
+            active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], start, stop, subsolver)
             if start > ph.nscenarios
                 continue
             end
@@ -225,17 +225,17 @@ function load_worker!(scenarioproblems::StochasticPrograms.ScenarioProblems,
                       sp::StochasticProgram,
                       w::Integer,
                       worker::SubWorker,
-                      x::AbstractVector,
                       start::Integer,
                       stop::Integer,
                       subsolver::MPB.AbstractMathProgSolver)
-    ws_problems = [WS(sp, scenarioproblems.scenarios[i], solver = subsolver) for i = start:stop]
-    πs = [probability(scenarioproblems.scenarios[i]) for i = start:stop]
     return remotecall(init_subworker!,
                       w,
                       worker,
-                      ws_problems,
-                      πs,
+                      generator(sp, :stage_1),
+                      generator(sp, :stage_2),
+                      first_stage_data(sp),
+                      second_stage_data(sp),
+                      scenarios(sp)[start:stop],
                       decision_length(sp),
                       subsolver,
                       collect(start:stop))
@@ -245,15 +245,14 @@ function load_worker!(scenarioproblems::StochasticPrograms.DScenarioProblems,
                       sp::StochasticProgram,
                       w::Integer,
                       worker::SubWorker,
-                      x::AbstractVector,
                       start::Integer,
                       stop::Integer,
                       subsolver::MPB.AbstractMathProgSolver)
     return remotecall(init_subworker!,
                       w,
                       worker,
-                      generator(sp,:stage_1),
-                      generator(sp,:stage_2),
+                      generator(sp, :stage_1),
+                      generator(sp, :stage_2),
                       first_stage_data(sp),
                       scenarioproblems[w-1],
                       decision_length(sp),
@@ -262,14 +261,21 @@ function load_worker!(scenarioproblems::StochasticPrograms.DScenarioProblems,
 end
 
 function init_subworker!(subworker::SubWorker{T,A,S},
-                         submodels::Vector{JuMP.Model},
-                         πs::A,
+                         stage_one_generator::Function,
+                         stage_two_generator::Function,
+                         first_stage::Any,
+                         second_stage::Any,
+                         scenarios::Vector{<:AbstractScenario},
                          xdim::Integer,
                          subsolver::MPB.AbstractMathProgSolver,
                          ids::Vector{Int}) where {T <: Real, A <: AbstractArray, S <: LQSolver}
     subproblems = Vector{SubProblem{T,A,S}}(undef, length(ids))
     for (i,id) = enumerate(ids)
-        subproblems[i] = SubProblem(submodels[i], id, πs[i], xdim, subsolver)
+        subproblems[i] = SubProblem(_WS(stage_one_generator, stage_two_generator, first_stage, second_stage, scenarios[i], subsolver),
+                                    id,
+                                    probability(scenarios[i]),
+                                    xdim,
+                                    subsolver)
     end
     put!(subworker, subproblems)
 end

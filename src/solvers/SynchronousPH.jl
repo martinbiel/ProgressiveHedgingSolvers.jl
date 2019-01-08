@@ -71,7 +71,7 @@ struct SynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoch
                            n,
                            Vector{SubWorker{T,A,S}}(undef, nworkers()),
                            SynchronousProgressiveHedgingParameters{T}(;kw...),
-                           ProgressThresh(1.0, "Distributed Progressive Hedging "))
+                           ProgressThresh(1.0, "Synchronous Progressive Hedging "))
         # Initialize solver
         init!(ph, subsolver)
         return ph

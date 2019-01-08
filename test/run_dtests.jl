@@ -13,8 +13,9 @@ using Gurobi
 
 τ = 1e-5
 reference_solver = GurobiSolver(OutputFlag=0)
-dphsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), execution = :synchronous, log=false),"Progressive Hedging"),
-              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, execution = :synchronous, θ = 1.01, log=false), "Adaptive Progressive Hedging")]
+dphsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), execution = :synchronous, log=false),"Synchronous Progressive Hedging"),
+              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, execution = :synchronous, θ = 1.01, log=false), "Synchronous Progressive Hedging with Adaptive Penalty"),
+              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), execution = :asynchronous, log=false),"Asynchronous Progressive Hedging"),]
 phsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), log=false),"Progressive Hedging"),
              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, θ = 1.01, log=false), "Adaptive Progressive Hedging")]
 
@@ -31,7 +32,7 @@ include("integer.jl")
 @info "Test problems loaded. Starting test sequence."
 
 @testset "Distributed solver" begin
-    @testset "Distributed $phname Solver with Distributed Data: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
+    @testset "$phname Solver with Distributed Data: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
         optimize!(sp, solver=reference_solver)
         x̄ = optimal_decision(sp)
         Q̄ = optimal_value(sp)
@@ -39,8 +40,9 @@ include("integer.jl")
         @test abs(optimal_value(sp) - Q̄)/(1e-10+abs(Q̄)) <= τ
         @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
     end
-    @testset "Distributed $phname Solver: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
+    @testset "$phname Solver: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
         sp_nondist = copy(sp, procs=[1])
+        add_scenarios!(sp_nondist, scenarios(sp))
         optimize!(sp_nondist, solver=reference_solver)
         x̄ = optimal_decision(sp_nondist)
         Q̄ = optimal_value(sp_nondist)

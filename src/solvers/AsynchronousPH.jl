@@ -36,7 +36,6 @@ struct AsynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoc
     # Estimate
     c::A
     ξ::A
-    v::A
     Q_history::A
     dual_gaps::A
 
@@ -50,11 +49,9 @@ struct AsynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoc
     work::Vector{Work}
     progressqueue::ProgressQueue{T}
     x̄::Vector{RunningAverage{A}}
-    ȳ::Vector{RunningAverage{A}}
+    δ::Vector{RunningAverage{T}}
     decisions::Decisions{A}
-    u::Decisions{A}
     r::IteratedValue{T}
-    θ::IteratedValue{T}
     active_workers::Vector{Future}
 
     # Params
@@ -85,7 +82,6 @@ struct AsynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoc
                            AsynchronousProgressiveHedgingData{T}(),
                            c_,
                            x₀_,
-                           copy(x₀_),
                            A(),
                            A(),
                            n,
@@ -95,14 +91,12 @@ struct AsynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoc
                            Vector{Work}(undef,nworkers()),
                            RemoteChannel(() -> Channel{Progress{T}}(4*nworkers()*n)),
                            Vector{RunningAverage{A}}(undef,nworkers()),
-                           Vector{RunningAverage{A}}(undef,nworkers()),
+                           Vector{RunningAverage{T}}(undef,nworkers()),
                            RemoteChannel(() -> IterationChannel(Dict{Int,A}())),
-                           RemoteChannel(() -> IterationChannel(Dict{Int,A}())),
-                           RemoteChannel(() -> IterationChannel(Dict{Int,T}())),
                            RemoteChannel(() -> IterationChannel(Dict{Int,T}())),
                            Vector{Future}(undef,nworkers()),
                            AsynchronousProgressiveHedgingParameters{T}(;kw...),
-                           ProgressThresh(1.0, "Distributed Progressive Hedging "))
+                           ProgressThresh(1.0, "Asynchronous Progressive Hedging "))
         # Initialize solver
         init!(ph, subsolver)
         return ph
