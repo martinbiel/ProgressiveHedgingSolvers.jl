@@ -45,6 +45,7 @@ include("solvers/AdaptivePH.jl")
 include("solvers/SynchronousPH.jl")
 include("solvers/SynchronousAdaptivePH.jl")
 include("solvers/AsynchronousPH.jl")
+include("solvers/AsynchronousAdaptivePH.jl")
 include("crash.jl")
 include("spinterface.jl")
 

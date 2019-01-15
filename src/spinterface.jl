@@ -58,7 +58,7 @@ function StructuredModel(stochasticprogram::StochasticProgram, solver::Progressi
         if solver.execution == :synchronous
             return SynchronousAdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
         elseif solver.execution == :asynchronous
-            return AdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
+            return AsynchronousAdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
         elseif solver.execution == :sequential
             return AdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
         else

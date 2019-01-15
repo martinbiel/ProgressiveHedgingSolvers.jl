@@ -14,10 +14,11 @@ using Gurobi
 τ = 1e-5
 reference_solver = GurobiSolver(OutputFlag=0)
 dphsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), execution = :synchronous, log=false),"Synchronous Progressive Hedging"),
-              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, execution = :synchronous, θ = 1.01, log=false), "Synchronous Progressive Hedging with Adaptive Penalty"),
-              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), execution = :asynchronous, log=false),"Asynchronous Progressive Hedging"),]
+              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, execution = :synchronous, θ = 1.01, α = 0.9, log=false), "Synchronous Progressive Hedging with Adaptive Penalty"),
+              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), execution = :asynchronous, log=false),"Asynchronous Progressive Hedging"),
+              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, execution = :asynchronous, θ = 1.01, α = 0.9, log=false), "Asynchronous Adaptive Progressive Hedging")]
 phsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), log=false),"Progressive Hedging"),
-             (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, θ = 1.01, log=false), "Adaptive Progressive Hedging")]
+             (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, θ = 1.01, α = 0.9, log=false), "Adaptive Progressive Hedging")]
 
 problems = Vector{Tuple{<:StochasticProgram,String}}()
 @info "Loading test problems..."

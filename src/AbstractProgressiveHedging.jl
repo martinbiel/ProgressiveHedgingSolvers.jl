@@ -10,6 +10,7 @@ function init!(ph::AbstractProgressiveHedgingSolver, subsolver::MPB.AbstractMath
     # Finish initialization based on solver traits
     init_subproblems!(ph, subsolver)
     # Initialize penalty parameter (if applicable)
+    ph.solverdata.δ₁ = 1.0
     init_penalty!(ph)
 end
 # ======================================================================== #

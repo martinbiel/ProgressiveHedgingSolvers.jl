@@ -1,5 +1,6 @@
-@with_kw mutable struct AsynchronousProgressiveHedgingData{T <: Real}
+@with_kw mutable struct AsynchronousAdaptiveProgressiveHedgingData{T <: Real}
     Q::T = 1e10
+    r::T = 1.0
     δ::T = 1.0
     δ₁::T = 1.0
     δ₂::T = 1.0
@@ -7,15 +8,24 @@
     iterations::Int = 0
 end
 
-@with_kw mutable struct AsynchronousProgressiveHedgingParameters{T <: Real}
+@with_kw mutable struct AsynchronousAdaptiveProgressiveHedgingParameters{T <: Real}
     κ::T = 0.6
-    r::T = 1.0
+    ζ::T = 0.1
+    γ₁::T = 1e-5
+    γ₂::T = 0.01
+    γ₃::T = 0.25
+    σ::T = 1e-5
+    α::T = 0.95
+    θ::T = 1.1
+    ν::T = 0.1
+    β::T = 1.1
+    η::T = 1.25
     τ::T = 1e-6
     log::Bool = true
 end
 
 """
-    AsynchronousProgressiveHedging
+    AsynchronousAdaptiveProgressiveHedging
 
 Functor object for the progressive-hedging algorithm. Create by supplying `:ph` to the `ProgressiveHedgingSolver` factory function and then pass to a `StochasticPrograms.jl` model, assuming there are available worker cores.
 
@@ -26,9 +36,9 @@ Functor object for the progressive-hedging algorithm. Create by supplying `:ph` 
 - `log::Bool = true`: Specifices if progressive-hedging procedure should be logged on standard output or not.
 ...
 """
-struct AsynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgram, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
+struct AsynchronousAdaptiveProgressiveHedging{T <: Real, A <: AbstractVector, SP <: StochasticProgram, S <: LQSolver} <: AbstractProgressiveHedgingSolver{T,A,S}
     stochasticprogram::SP
-    solverdata::AsynchronousProgressiveHedgingData{T}
+    solverdata::AsynchronousAdaptiveProgressiveHedgingData{T}
 
     # Estimate
     c::A
@@ -52,13 +62,13 @@ struct AsynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoc
     active_workers::Vector{Future}
 
     # Params
-    parameters::AsynchronousProgressiveHedgingParameters{T}
+    parameters::AsynchronousAdaptiveProgressiveHedgingParameters{T}
     progress::ProgressThresh{T}
 
-    @implement_trait AsynchronousProgressiveHedging Fixed
-    @implement_trait AsynchronousProgressiveHedging Asynchronous
+    @implement_trait AsynchronousAdaptiveProgressiveHedging Adaptive
+    @implement_trait AsynchronousAdaptiveProgressiveHedging Asynchronous
 
-    function (::Type{AsynchronousProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
+    function (::Type{AsynchronousAdaptiveProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
         if nworkers() == 1
             @warn "There are no worker processes, defaulting to serial version of algorithm"
             return ProgressiveHedging(stochasticprogram, x₀, subsolver; kw...)
@@ -76,7 +86,7 @@ struct AsynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoc
         n = StochasticPrograms.nscenarios(stochasticprogram)
 
         ph = new{T,A,SP,S}(stochasticprogram,
-                           AsynchronousProgressiveHedgingData{T}(),
+                           AsynchronousAdaptiveProgressiveHedgingData{T}(),
                            c_,
                            x₀_,
                            A(),
@@ -92,16 +102,16 @@ struct AsynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoc
                            RemoteChannel(() -> IterationChannel(Dict{Int,A}())),
                            RemoteChannel(() -> IterationChannel(Dict{Int,T}())),
                            Vector{Future}(undef,nworkers()),
-                           AsynchronousProgressiveHedgingParameters{T}(;kw...),
+                           AsynchronousAdaptiveProgressiveHedgingParameters{T}(;kw...),
                            ProgressThresh(1.0, "Asynchronous Progressive Hedging "))
         # Initialize solver
         init!(ph, subsolver)
         return ph
     end
 end
-AsynchronousProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = AsynchronousProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
+AsynchronousAdaptiveProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = AsynchronousAdaptiveProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
 
-function (ph::AsynchronousProgressiveHedging)()
+function (ph::AsynchronousAdaptiveProgressiveHedging)()
     # Reset timer
     ph.progress.tfirst = ph.progress.tlast = time()
     # Start workers

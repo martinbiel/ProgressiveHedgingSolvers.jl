@@ -11,31 +11,17 @@ end
         # Prepare the subproblems
         m = ph.stochasticprogram
         load_subproblems!(ph, subsolver)
-        ph.ξ[:] = sum([subproblem.π*subproblem.x for subproblem in ph.subproblems])
+        update_iterate!(ph)
         return ph
     end
 
     function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::MPB.AbstractMathProgSolver, Parallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
-        # Partitioning
-        (jobsize, extra) = divrem(ph.nscenarios, nworkers())
-        # One extra to guarantee coverage
-        if extra > 0
-            jobsize += 1
-        end
         # Create subproblems on worker processes
         m = ph.stochasticprogram
-        start = 1
-        stop = jobsize
         active_workers = Vector{Future}(undef, nworkers())
         for w in workers()
             ph.subworkers[w-1] = RemoteChannel(() -> Channel{Vector{SubProblem{T,A,S}}}(1), w)
-            active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], start, stop, subsolver)
-            if start > ph.nscenarios
-                continue
-            end
-            start += jobsize
-            stop += jobsize
-            stop = min(stop, ph.nscenarios)
+            active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], subsolver)
         end
         # Prepare memory
         log_val = ph.parameters.log
@@ -225,9 +211,13 @@ function load_worker!(scenarioproblems::StochasticPrograms.ScenarioProblems,
                       sp::StochasticProgram,
                       w::Integer,
                       worker::SubWorker,
-                      start::Integer,
-                      stop::Integer,
                       subsolver::MPB.AbstractMathProgSolver)
+    (nscen, extra) = divrem(StochasticPrograms.nscenarios(scenarioproblems), nworkers())
+    if extra > 0
+        nscen += 1
+    end
+    start = (w-2)*nscen+1
+    stop = min((w-1)*nscen, StochasticPrograms.nscenarios(scenarioproblems))
     return remotecall(init_subworker!,
                       w,
                       worker,
@@ -245,9 +235,10 @@ function load_worker!(scenarioproblems::StochasticPrograms.DScenarioProblems,
                       sp::StochasticProgram,
                       w::Integer,
                       worker::SubWorker,
-                      start::Integer,
-                      stop::Integer,
                       subsolver::MPB.AbstractMathProgSolver)
+    leading_scen = [remotecall_fetch((sp)->StochasticPrograms.nscenarios(fetch(sp)), p, scenarioproblems[p-1]) for p in 2:(w-1)]
+    start = isempty(leading_scen) ? 1 : sum(leading_scen)+1
+    stop = min(start + remotecall_fetch((sp)->StochasticPrograms.nscenarios(fetch(sp)) - 1, w, scenarioproblems[w-1]), StochasticPrograms.nscenarios(scenarioproblems))
     return remotecall(init_subworker!,
                       w,
                       worker,

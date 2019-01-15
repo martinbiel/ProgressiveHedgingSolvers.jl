@@ -13,11 +13,11 @@
     active_workers = Vector{Future}(undef, nworkers())
     for w in workers()
         ph.subworkers[w-1] = RemoteChannel(() -> Channel{Vector{SubProblem{T,A,S}}}(1), w)
-        active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], start, stop, subsolver)
+        active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], subsolver)
         if start > ph.nscenarios
             continue
         end
-        start += jobsize
+        start = stop + 1
         stop += jobsize
         stop = min(stop, ph.nscenarios)
     end
@@ -46,6 +46,16 @@
     log!(ph)
     ph.parameters.log = log_val
     update_iterate!(ph)
+    # Init δ₂
+    for w in workers()
+        active_workers[w-1] = remotecall((sw,ξ,δ)->begin
+            for (i,s) ∈ enumerate(fetch(sw))
+                take!(δ, i)
+                put!(δ, i, norm(s.x - ξ, 2)^2, s.π)
+            end
+        end, w, ph.subworkers[w-1], ph.ξ, ph.δ[w-1])
+    end
+    map(wait, active_workers)
     return ph
 end
 
@@ -201,16 +211,16 @@ function work_on_subproblems!(subworker::SubWorker{T,A,S},
         end
         ξ::A = fetch(decisions, t)
         if t > 1
-            update_subproblems!(subproblems, ξ, fetch(r,t))
+            update_subproblems!(subproblems, ξ, fetch(r,t-1))
         end
         @sync for (i,subproblem) ∈ enumerate(subproblems)
             @async begin
-                take!(x̄, i)
                 take!(δ, i)
+                take!(x̄, i)
+                put!(δ, i, norm(subproblem.x - ξ, 2)^2, subproblem.π)
                 reformulate_subproblem!(subproblem, ξ, fetch(r,t))
                 Q::T = subproblem()
                 put!(x̄, i, subproblem.π)
-                put!(δ, i, norm(subproblem.x - ξ, 2)^2, subproblem.π)
                 put!(progress, (t,subproblem.id,Q))
             end
         end
@@ -257,34 +267,31 @@ function iterate_async!(ph::AbstractProgressiveHedgingSolver{T}) where T <: Real
         ph.subobjectives[t][i] = Q
         ph.finished[t] += 1
         if ph.finished[t] == nscenarios(ph)
-            ph.solverdata.timestamp = t
             # Update objective
             ph.Q_history[t] = current_objective_value(ph, ph.subobjectives[t])
             ph.solverdata.Q = ph.Q_history[t]
-            # Update iterate
-            update_iterate!(ph)
-            # Get dual gap
-            update_dual_gap!(ph)
-            ph.dual_gaps[t] = ph.solverdata.δ₂
-            # Update penalty (if applicable)
-            update_penalty!(ph)
-            # Update progress
-            @unpack δ₁, δ₂ = ph.solverdata
-            ph.solverdata.δ = sqrt(δ₁ + δ₂)/(1e-10+norm(ph.ξ,2))
-            # Check if optimal
-            if check_optimality(ph)
-                # Optimal, tell workers to stop
-                map((w,aw)->!isready(aw) && put!(w,t), ph.work, ph.active_workers)
-                map((w,aw)->!isready(aw) && put!(w,-1), ph.work, ph.active_workers)
-                # Final log
-                log!(ph)
-                return :Optimal
-            end
         end
     end
     # Project and generate new iterate
     t = ph.solverdata.iterations
     if ph.finished[t] >= ph.parameters.κ*nscenarios(ph)
+        # Get dual gap
+        update_dual_gap!(ph)
+        # Update progress
+        @unpack δ₁, δ₂ = ph.solverdata
+        ph.dual_gaps[t] = δ₂
+        ph.solverdata.δ = sqrt(δ₁ + δ₂)/(1e-10+norm(ph.ξ,2))
+        # Check if optimal
+        if check_optimality(ph)
+            # Optimal, tell workers to stop
+            map((w,aw)->!isready(aw) && put!(w,t), ph.work, ph.active_workers)
+            map((w,aw)->!isready(aw) && put!(w,-1), ph.work, ph.active_workers)
+            # Final log
+            log!(ph)
+            return :Optimal
+        end
+        # Update penalty (if applicable)
+        update_penalty!(ph)
         # Update iterate
         update_iterate!(ph)
         # Send new work to workers
