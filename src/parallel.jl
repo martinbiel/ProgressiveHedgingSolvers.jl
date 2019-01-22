@@ -6,8 +6,8 @@
     Asynchronous
 end
 
-@define_traitfn Parallel init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::MPB.AbstractMathProgSolver) where {T <: Real, A <: AbstractVector, S <: LQSolver} = begin
-    function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::MPB.AbstractMathProgSolver, !Parallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
+@define_traitfn Parallel init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::QPSolver) where {T <: Real, A <: AbstractVector, S <: LQSolver} = begin
+    function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::QPSolver, !Parallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
         # Prepare the subproblems
         m = ph.stochasticprogram
         load_subproblems!(ph, subsolver)
@@ -15,7 +15,7 @@ end
         return ph
     end
 
-    function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::MPB.AbstractMathProgSolver, Parallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
+    function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::QPSolver, Parallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
         # Create subproblems on worker processes
         m = ph.stochasticprogram
         active_workers = Vector{Future}(undef, nworkers())
@@ -211,7 +211,7 @@ function load_worker!(scenarioproblems::StochasticPrograms.ScenarioProblems,
                       sp::StochasticProgram,
                       w::Integer,
                       worker::SubWorker,
-                      subsolver::MPB.AbstractMathProgSolver)
+                      subsolver::QPSolver)
     n = StochasticPrograms.nscenarios(scenarioproblems)
     (nscen, extra) = divrem(n, nworkers())
     prev = [nscen + (extra + 2 - p > 0) for p in 2:(w-1)]
@@ -234,8 +234,8 @@ function load_worker!(scenarioproblems::StochasticPrograms.DScenarioProblems,
                       sp::StochasticProgram,
                       w::Integer,
                       worker::SubWorker,
-                      subsolver::MPB.AbstractMathProgSolver)
-    leading_scen = [remotecall_fetch((sp)->StochasticPrograms.nscenarios(fetch(sp)), p, scenarioproblems[p-1]) for p in 2:(w-1)]
+                      subsolver::QPSolver)
+    leading_scen = [scenarioproblems.scenario_distribution[p-1] for p in 2:(w-1)]
     start_id = isempty(leading_scen) ? 1 : sum(leading_scen)+1
     return remotecall(init_subworker!,
                       w,
@@ -256,16 +256,17 @@ function init_subworker!(subworker::SubWorker{T,A,S},
                          second_stage::Any,
                          scenarios::Vector{<:AbstractScenario},
                          xdim::Integer,
-                         subsolver::MPB.AbstractMathProgSolver,
+                         subsolver::QPSolver,
                          start_id::Integer) where {T <: Real, A <: AbstractArray, S <: LQSolver}
     subproblems = Vector{SubProblem{T,A,S}}(undef, length(scenarios))
     id = start_id
+    solver = get_solver(subsolver)
     for (i,scenario) = enumerate(scenarios)
-        subproblems[i] = SubProblem(_WS(stage_one_generator, stage_two_generator, first_stage, second_stage, scenario, subsolver),
+        subproblems[i] = SubProblem(_WS(stage_one_generator, stage_two_generator, first_stage, second_stage, scenario, solver),
                                     id,
                                     probability(scenario),
                                     xdim,
-                                    subsolver)
+                                    solver)
         id += 1
     end
     put!(subworker, subproblems)
@@ -277,17 +278,18 @@ function init_subworker!(subworker::SubWorker{T,A,S},
                          first_stage::Any,
                          scenarioproblems::ScenarioProblems,
                          xdim::Integer,
-                         subsolver::MPB.AbstractMathProgSolver,
+                         subsolver::QPSolver,
                          start_id::Integer) where {T <: Real, A <: AbstractArray, S <: LQSolver}
     sp = fetch(scenarioproblems)
     subproblems = Vector{SubProblem{T,A,S}}(undef, StochasticPrograms.nscenarios(sp))
     id = start_id
+    solver = get_solver(subsolver)
     for (i,scenario) = enumerate(scenarios(sp))
-        subproblems[i] = SubProblem(_WS(stage_one_generator, stage_two_generator, first_stage, stage_data(sp), scenario, subsolver),
+        subproblems[i] = SubProblem(_WS(stage_one_generator, stage_two_generator, first_stage, stage_data(sp), scenario, solver),
                                     id,
                                     probability(scenario),
                                     xdim,
-                                    subsolver)
+                                    solver)
         id += 1
     end
     put!(subworker, subproblems)

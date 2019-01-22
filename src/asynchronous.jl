@@ -1,4 +1,4 @@
-@implement_traitfn function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::MPB.AbstractMathProgSolver, Asynchronous) where {T <: Real, A <: AbstractVector, S <: LQSolver}
+@implement_traitfn function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::QPSolver, Asynchronous) where {T <: Real, A <: AbstractVector, S <: LQSolver}
     @unpack κ = ph.parameters
     # Partitioning
     (jobsize, extra) = divrem(ph.nscenarios, nworkers())

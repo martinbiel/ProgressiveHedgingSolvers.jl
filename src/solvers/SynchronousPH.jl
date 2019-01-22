@@ -45,10 +45,10 @@ struct SynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoch
     @implement_trait SynchronousProgressiveHedging Fixed
     @implement_trait SynchronousProgressiveHedging Synchronous
 
-    function (::Type{SynchronousProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::MPB.AbstractMathProgSolver; kw...)
+    function (::Type{SynchronousProgressiveHedging})(stochasticprogram::StochasticProgram, x₀::AbstractVector, subsolver::QPSolver; kw...)
         if nworkers() == 1
             @warn "There are no worker processes, defaulting to serial version of algorithm"
-            return ProgressiveHedging(stochasticprogram, x₀, subsolver; kw...)
+            return ProgressiveHedging(stochasticprogram, x₀, get_solver(subsolver); kw...)
         end
         first_stage = StochasticPrograms.get_stage_one(stochasticprogram)
         length(x₀) != first_stage.numCols && error("Incorrect length of starting guess, has ", length(x₀), " should be ", first_stage.numCols)
@@ -59,7 +59,8 @@ struct SynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoch
         x₀_ = convert(AbstractVector{T}, copy(x₀))
         A = typeof(x₀_)
         SP = typeof(stochasticprogram)
-        S = LQSolver{typeof(MPB.LinearQuadraticModel(subsolver)),typeof(subsolver)}
+        solver_instance = get_solver(subsolver)
+        S = LQSolver{typeof(MPB.LinearQuadraticModel(solver_instance)),typeof(solver_instance)}
         n = StochasticPrograms.nscenarios(stochasticprogram)
 
         ph = new{T,A,SP,S}(stochasticprogram,
@@ -77,7 +78,7 @@ struct SynchronousProgressiveHedging{T <: Real, A <: AbstractVector, SP <: Stoch
         return ph
     end
 end
-SynchronousProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::MPB.AbstractMathProgSolver; kw...) = SynchronousProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
+SynchronousProgressiveHedging(stochasticprogram::StochasticProgram, subsolver::QPSolver; kw...) = SynchronousProgressiveHedging(stochasticprogram, rand(decision_length(stochasticprogram)), subsolver; kw...)
 
 function (ph::SynchronousProgressiveHedging)()
     # Reset timer

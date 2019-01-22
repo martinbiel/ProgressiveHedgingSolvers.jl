@@ -32,14 +32,14 @@ Progressive Hedging Time: 0:00:06 (1315 iterations)
 :Optimal
 ```
 """
-struct ProgressiveHedgingSolver <: AbstractStructuredSolver
-    qpsolver::MPB.AbstractMathProgSolver
+struct ProgressiveHedgingSolver{S <: QPSolver} <: AbstractStructuredSolver
+    qpsolver::S
     penalty::Symbol
     execution::Symbol
     parameters
 
-    function (::Type{ProgressiveHedgingSolver})(qpsolver::MPB.AbstractMathProgSolver; crash::Crash.CrashMethod = Crash.None(), penalty = :fixed, execution = :sequential, kwargs...)
-        return new(qpsolver, penalty, execution, kwargs)
+    function (::Type{ProgressiveHedgingSolver})(qpsolver::QPSolver; crash::Crash.CrashMethod = Crash.None(), penalty = :fixed, execution = :sequential, kwargs...)
+        return new{typeof(qpsolver)}(qpsolver, penalty, execution, kwargs)
     end
 end
 
@@ -50,7 +50,7 @@ function StructuredModel(stochasticprogram::StochasticProgram, solver::Progressi
         elseif solver.execution == :asynchronous
             return AsynchronousProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
         elseif solver.execution == :sequential
-            return ProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
+            return ProgressiveHedging(stochasticprogram, get_solver(solver.qpsolver); solver.parameters...)
         else
             error("Unknown execution: ", solver.execution)
         end
@@ -60,7 +60,7 @@ function StructuredModel(stochasticprogram::StochasticProgram, solver::Progressi
         elseif solver.execution == :asynchronous
             return AsynchronousAdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
         elseif solver.execution == :sequential
-            return AdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
+            return AdaptiveProgressiveHedging(stochasticprogram, get_solver(solver.qpsolver); solver.parameters...)
         else
             error("Unknown execution: ", solver.execution)
         end
@@ -70,7 +70,7 @@ function StructuredModel(stochasticprogram::StochasticProgram, solver::Progressi
 end
 
 function internal_solver(solver::ProgressiveHedgingSolver)
-    return solver.qpsolver
+    return get_solver(solver.qpsolver)
 end
 
 function optimize_structured!(ph::AbstractProgressiveHedgingSolver)
