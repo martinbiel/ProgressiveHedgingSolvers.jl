@@ -1,40 +1,42 @@
 @implement_traitfn function resolve_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A}, Synchronous) where {T <: Real, A <: AbstractVector}
-    active_workers = Vector{Future}(undef, nworkers())
-    for w in workers()
-        active_workers[w-1] = remotecall(resolve_subproblems!, w, ph.subworkers[w-1], ph.ξ, penalty(ph))
+    partial_objectives = Vector{T}(undef, nworkers())
+    @sync begin
+        for (i,w) in enumerate(workers())
+            @async partial_objectives[i] = remotecall_fetch(resolve_subproblems!, w, ph.subworkers[w-1], ph.ξ, penalty(ph))
+        end
     end
-    map(wait, active_workers)
-    return sum(map(fetch, active_workers))
+    return sum(partial_objectives)
 end
 
-@implement_traitfn function update_iterate!(ph::AbstractProgressiveHedgingSolver, Synchronous)
-    active_workers = Vector{Future}(undef, nworkers())
-    for w in workers()
-        active_workers[w-1] = remotecall(collect_primals, w, ph.subworkers[w-1], length(ph.ξ))
+@implement_traitfn function update_iterate!(ph::AbstractProgressiveHedgingSolver{T,A}, Synchronous) where {T <: Real, A <: AbstractVector}
+    partial_primals = Vector{A}(undef, nworkers())
+    @sync begin
+        for (i,w) in enumerate(workers())
+            @async partial_primals[i] = remotecall_fetch(collect_primals, w, ph.subworkers[w-1], length(ph.ξ))
+        end
     end
-    map(wait, active_workers)
     ξ_prev = copy(ph.ξ)
-    ph.ξ[:] = sum(fetch.(active_workers))
+    ph.ξ[:] = sum(partial_primals)
     # Update δ₁
     ph.solverdata.δ₁ = norm(ph.ξ-ξ_prev, 2)^2
 end
 
 @implement_traitfn function update_subproblems!(ph::AbstractProgressiveHedgingSolver, Synchronous)
-    active_workers = Vector{Future}(undef, nworkers())
     # Update dual prices
-    for w in workers()
-        active_workers[w-1] = remotecall((sw,ξ,r)->begin
-                                         subproblems = fetch(sw)
-                                         if length(subproblems) > 0
-                                         update_subproblems!(subproblems, ξ, r)
-                                         end
-                                         end,
-                                         w,
-                                         ph.subworkers[w-1],
-                                         ph.ξ,
-                                         penalty(ph))
+    @sync begin
+        for w in workers()
+            @async remotecall_fetch((sw,ξ,r)->begin
+                subproblems = fetch(sw)
+                if length(subproblems) > 0
+                    update_subproblems!(subproblems, ξ, r)
+                end
+                end,
+                w,
+                ph.subworkers[w-1],
+                ph.ξ,
+                penalty(ph))
+        end
     end
-    map(wait, active_workers)
     return nothing
 end
 

@@ -18,18 +18,17 @@ end
     function init_subproblems!(ph::AbstractProgressiveHedgingSolver{T,A,S}, subsolver::QPSolver, Parallel) where {T <: Real, A <: AbstractVector, S <: LQSolver}
         # Create subproblems on worker processes
         m = ph.stochasticprogram
-        active_workers = Vector{Future}(undef, nworkers())
-        for w in workers()
-            ph.subworkers[w-1] = RemoteChannel(() -> Channel{Vector{SubProblem{T,A,S}}}(1), w)
-            active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], subsolver)
+        @sync begin
+            for w in workers()
+                ph.subworkers[w-1] = RemoteChannel(() -> Channel{Vector{SubProblem{T,A,S}}}(1), w)
+                @async load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], subsolver)
+            end
+            # Prepare memory
+            log_val = ph.parameters.log
+            ph.parameters.log = false
+            log!(ph)
+            ph.parameters.log = log_val
         end
-        # Prepare memory
-        log_val = ph.parameters.log
-        ph.parameters.log = false
-        log!(ph)
-        ph.parameters.log = log_val
-        # Ensure initialization is finished
-        map(wait, active_workers)
         update_iterate!(ph)
         return ph
     end
@@ -89,24 +88,25 @@ end
         return nothing
     end
 
-   function update_dual_gap!(ph::AbstractProgressiveHedgingSolver{T}, Parallel) where T <: Real
-        active_workers = Vector{Future}(undef, nworkers())
+    function update_dual_gap!(ph::AbstractProgressiveHedgingSolver{T}, Parallel) where T <: Real
         # Update δ₂
-        for w in workers()
-            active_workers[w-1] = remotecall((sw,ξ)->begin
-                                                 subproblems = fetch(sw)
-                                                 if length(subproblems) > 0
-                                                     return sum([s.π*norm(s.x-ξ,2)^2 for s in subproblems])
-                                                 else
-                                                     return zero(T)
-                                                 end
-                                             end,
-                                             w,
-                                             ph.subworkers[w-1],
-                                             ph.ξ)
+        partial_δs = Vector{Float64}(undef, nworkers())
+        @sync begin
+            for (i,w) in enumerate(workers())
+                @async partial_δs[i] = remotecall_fetch((sw,ξ)->begin
+                    subproblems = fetch(sw)
+                    if length(subproblems) > 0
+                        return sum([s.π*norm(s.x-ξ,2)^2 for s in subproblems])
+                    else
+                        return zero(T)
+                    end
+                end,
+                w,
+                ph.subworkers[w-1],
+                ph.ξ)
+            end
         end
-        map(wait, active_workers)
-        ph.solverdata.δ₂ = sum(fetch.(active_workers))
+        ph.solverdata.δ₂ = sum(partial_δs)
         return nothing
     end
 end
@@ -117,22 +117,22 @@ end
     end
 
     function calculate_objective_value(ph::AbstractProgressiveHedgingSolver{T}, Parallel) where T <: Real
-        active_workers = Vector{Future}(undef, nworkers())
-        # Update δ₂
-        for w in workers()
-            active_workers[w-1] = remotecall((sw)->begin
-                                                 subproblems = fetch(sw)
-                                                 if length(subproblems) > 0
-                                                     return sum([get_objective_value(s) for s in subproblems])
-                                                 else
-                                                     return zero(T)
-                                                 end
-                                             end,
-                                             w,
-                                             ph.subworkers[w-1])
+        partial_objectives = Vector{Float64}(undef, nworkers())
+        @sync begin
+            for (i,w) in enumerate(workers())
+                @async partial_objectives[i] = remotecall_fetch((sw)->begin
+                    subproblems = fetch(sw)
+                    if length(subproblems) > 0
+                        return sum([get_objective_value(s) for s in subproblems])
+                    else
+                        return zero(T)
+                    end
+                end,
+                w,
+                ph.subworkers[w-1])
+            end
         end
-        map(wait, active_workers)
-        return sum(fetch.(active_workers))
+        return sum(partial_objectives)
     end
 end
 
@@ -145,51 +145,55 @@ end
 
     function fill_submodels!(ph::AbstractProgressiveHedgingSolver, scenarioproblems::StochasticPrograms.ScenarioProblems, Parallel)
         j = 0
-        for w in workers()
-            n = remotecall_fetch((sw)->length(fetch(sw)), w, ph.subworkers[w-1])
-            for i = 1:n
-                fill_submodel!(scenarioproblems.problems[i+j],remotecall_fetch((sw,i,x)->begin
-                                                                               sp = fetch(sw)[i]
-                                                                               get_solution(sp)
-                                                                               end,
-                                                                               w,
-                                                                               ph.subworkers[w-1],
-                                                                               i,
-                                                                               ph.ξ)...)
+        @sync begin
+            for w in workers()
+                n = remotecall_fetch((sw)->length(fetch(sw)), w, ph.subworkers[w-1])
+                for i = 1:n
+                    k = i+j
+                    @async fill_submodel!(scenarioproblems.problems[k],remotecall_fetch((sw,i,x)->begin
+                        sp = fetch(sw)[i]
+                        get_solution(sp)
+                    end,
+                    w,
+                    ph.subworkers[w-1],
+                    i,
+                    ph.ξ)...)
+                end
+                j += n
             end
-            j += n
         end
     end
 end
 
 @define_traitfn Parallel fill_submodels!(ph::AbstractProgressiveHedgingSolver, scenarioproblems::StochasticPrograms.DScenarioProblems) = begin
     function fill_submodels!(ph::AbstractProgressiveHedgingSolver, scenarioproblems::StochasticPrograms.DScenarioProblems, !Parallel)
-        active_workers = Vector{Future}(undef, nsubproblems(scenarioproblems))
-        j = 1
-        for w in workers()
-            n = remotecall_fetch((sp)->length(fetch(sp).problems), w, scenarioproblems[w-1])
-            for i in 1:n
-                active_workers[j] = remotecall((sp,i,x,μ,λ) -> fill_submodel!(fetch(sp).problems[i],x,μ,λ),
-                                               w,
-                                               scenarioproblems[w-1],
-                                               i,
-                                               get_solution(ph.subproblems[j])...)
-                j += 1
+        j = 0
+        @sync begin
+            for w in workers()
+                n = remotecall_fetch((sp)->length(fetch(sp).problems), w, scenarioproblems[w-1])
+                for i in 1:n
+                    k = i+j
+                    @async remotecall_fetch((sp,i,x,μ,λ) -> fill_submodel!(fetch(sp).problems[i],x,μ,λ),
+                                            w,
+                                            scenarioproblems[w-1],
+                                            i,
+                                            get_solution(ph.subproblems[k])...)
+                end
+                j += n
             end
         end
-        map(wait, active_workers)
     end
 
     function fill_submodels!(ph::AbstractProgressiveHedgingSolver, scenarioproblems::StochasticPrograms.DScenarioProblems, Parallel)
-        active_workers = Vector{Future}(undef, nworkers())
-        for w in workers()
-            active_workers[w-1] = remotecall(fill_submodels!,
-                                             w,
-                                             ph.subworkers[w-1],
-                                             ph.ξ,
-                                             scenarioproblems[w-1])
+        @sync begin
+            for w in workers()
+                @async remotecall(fill_submodels!,
+                                  w,
+                                  ph.subworkers[w-1],
+                                  ph.ξ,
+                                  scenarioproblems[w-1])
+            end
         end
-        map(wait, active_workers)
     end
 end
 
@@ -217,17 +221,17 @@ function load_worker!(scenarioproblems::StochasticPrograms.ScenarioProblems,
     prev = [nscen + (extra + 2 - p > 0) for p in 2:(w-1)]
     start = isempty(prev) ? 1 : sum(prev) + 1
     stop = min(start + nscen + (extra + 2 - w > 0) - 1, n)
-    return remotecall(init_subworker!,
-                      w,
-                      worker,
-                      generator(sp, :stage_1),
-                      generator(sp, :stage_2),
-                      first_stage_data(sp),
-                      second_stage_data(sp),
-                      scenarios(sp)[start:stop],
-                      decision_length(sp),
-                      subsolver,
-                      start)
+    return remotecall_fetch(init_subworker!,
+                            w,
+                            worker,
+                            generator(sp, :stage_1),
+                            generator(sp, :stage_2),
+                            first_stage_data(sp),
+                            second_stage_data(sp),
+                            scenarios(sp)[start:stop],
+                            decision_length(sp),
+                            subsolver,
+                            start)
 end
 
 function load_worker!(scenarioproblems::StochasticPrograms.DScenarioProblems,
@@ -237,16 +241,16 @@ function load_worker!(scenarioproblems::StochasticPrograms.DScenarioProblems,
                       subsolver::QPSolver)
     leading_scen = [scenarioproblems.scenario_distribution[p-1] for p in 2:(w-1)]
     start_id = isempty(leading_scen) ? 1 : sum(leading_scen)+1
-    return remotecall(init_subworker!,
-                      w,
-                      worker,
-                      generator(sp, :stage_1),
-                      generator(sp, :stage_2),
-                      first_stage_data(sp),
-                      scenarioproblems[w-1],
-                      decision_length(sp),
-                      subsolver,
-                      start_id)
+    return remotecall_fetch(init_subworker!,
+                            w,
+                            worker,
+                            generator(sp, :stage_1),
+                            generator(sp, :stage_2),
+                            first_stage_data(sp),
+                            scenarioproblems[w-1],
+                            decision_length(sp),
+                            subsolver,
+                            start_id)
 end
 
 function init_subworker!(subworker::SubWorker{T,A,S},

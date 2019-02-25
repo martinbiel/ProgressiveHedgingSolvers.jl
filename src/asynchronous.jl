@@ -11,51 +11,48 @@
     start = 1
     stop = jobsize
     active_workers = Vector{Future}(undef, nworkers())
-    for w in workers()
-        ph.subworkers[w-1] = RemoteChannel(() -> Channel{Vector{SubProblem{T,A,S}}}(1), w)
-        active_workers[w-1] = load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], subsolver)
-        if start > ph.nscenarios
-            continue
+    @sync begin
+        for w in workers()
+            ph.subworkers[w-1] = RemoteChannel(() -> Channel{Vector{SubProblem{T,A,S}}}(1), w)
+            @async load_worker!(scenarioproblems(m), m, w, ph.subworkers[w-1], subsolver)
         end
-        start = stop + 1
-        stop += jobsize
-        stop = min(stop, ph.nscenarios)
     end
-    # Ensure initialization is finished
-    map(wait, active_workers)
-    # Continue preparation
-    for w in workers()
-        ph.work[w-1] = RemoteChannel(() -> Channel{Int}(round(Int,10/κ)), w)
-        ph.x̄[w-1] = remotecall_fetch((sw, xdim)->begin
-                                         subproblems = fetch(sw)
-                                         if length(subproblems) > 0
-                                             x̄ = sum([s.π*s.x for s in subproblems])
-                                             return RemoteChannel(()->RunningAverageChannel(x̄, [s.x for s in subproblems]), myid())
-                                         else
-                                             return RemoteChannel(()->RunningAverageChannel(zeros(T,xdim), Vector{A}()), myid())
-                                         end
-                                     end, w, ph.subworkers[w-1], decision_length(m))
-        ph.δ[w-1] = remotecall_fetch((sw, xdim)->RemoteChannel(()->RunningAverageChannel(zero(T), fill(zero(T),length(fetch(sw))))), w, ph.subworkers[w-1], decision_length(m))
-        put!(ph.work[w-1], 1)
+    @sync begin
+        # Continue preparation
+        for w in workers()
+            ph.work[w-1] = RemoteChannel(() -> Channel{Int}(round(Int,10/κ)), w)
+            @async ph.x̄[w-1] = remotecall_fetch((sw, xdim)->begin
+                subproblems = fetch(sw)
+                if length(subproblems) > 0
+                    x̄ = sum([s.π*s.x for s in subproblems])
+                    return RemoteChannel(()->RunningAverageChannel(x̄, [s.x for s in subproblems]), myid())
+                else
+                    return RemoteChannel(()->RunningAverageChannel(zeros(T,xdim), Vector{A}()), myid())
+                end
+            end, w, ph.subworkers[w-1], decision_length(m))
+            @async ph.δ[w-1] = remotecall_fetch((sw, xdim)->RemoteChannel(()->RunningAverageChannel(zero(T), fill(zero(T),length(fetch(sw))))), w, ph.subworkers[w-1], decision_length(m))
+            put!(ph.work[w-1], 1)
+        end
+        # Prepare memory
+        push!(ph.subobjectives, zeros(nscenarios(ph)))
+        push!(ph.finished, 0)
+        log_val = ph.parameters.log
+        ph.parameters.log = false
+        log!(ph)
+        ph.parameters.log = log_val
     end
-    # Prepare memory
-    push!(ph.subobjectives, zeros(nscenarios(ph)))
-    push!(ph.finished, 0)
-    log_val = ph.parameters.log
-    ph.parameters.log = false
-    log!(ph)
-    ph.parameters.log = log_val
     update_iterate!(ph)
     # Init δ₂
-    for w in workers()
-        active_workers[w-1] = remotecall((sw,ξ,δ)->begin
-            for (i,s) ∈ enumerate(fetch(sw))
-                take!(δ, i)
-                put!(δ, i, norm(s.x - ξ, 2)^2, s.π)
-            end
-        end, w, ph.subworkers[w-1], ph.ξ, ph.δ[w-1])
+    @sync begin
+        for w in workers()
+            @async remotecall_fetch((sw,ξ,δ)->begin
+                for (i,s) ∈ enumerate(fetch(sw))
+                    take!(δ, i)
+                    put!(δ, i, norm(s.x - ξ, 2)^2, s.π)
+                end
+            end, w, ph.subworkers[w-1], ph.ξ, ph.δ[w-1])
+        end
     end
-    map(wait, active_workers)
     return ph
 end
 
@@ -237,13 +234,14 @@ end
 function calculate_theta!(ph::AbstractProgressiveHedgingSolver{T}, t::Integer) where T <: Real
     @unpack τ = ph.solverdata
     @unpack ν = ph.parameters
-    active_workers = Vector{Future}(undef, nworkers())
-    for w in workers()
-        active_workers[w-1] = remotecall(calculate_theta_part, w, ph.subworkers[w-1], ph.ȳ[w-1], fetch(ph.decisions, t))
+    partial_thetas = Vector{T}(undef, nworkers())
+    @sync begin
+        for (i,w) in enumerate(workers())
+            partial_thetas[i] = remotecall_fetch(calculate_theta_part, w, ph.subworkers[w-1], ph.ȳ[w-1], fetch(ph.decisions, t))
+        end
     end
-    map(wait, active_workers)
     # Update θ
-    ph.solverdata.θ = (ν/τ)*max(0, sum(fetch.(active_workers)))
+    ph.solverdata.θ = (ν/τ)*max(0, sum(partial_thetas))
 end
 
 function calculate_theta_part(subworker::SubWorker{T,A,S}, ȳ::RunningAverage{A}, ξ::AbstractVector) where {T <: Real, A <: AbstractArray, S <: LQSolver}
