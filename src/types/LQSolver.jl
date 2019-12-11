@@ -6,7 +6,7 @@ mutable struct LQSolver{M <: MPB.AbstractLinearQuadraticModel, S <: MPB.Abstract
     lqmodel::M
     optimsolver::S
 
-    function (::Type{LQSolver})(model::JuMP.Model, optimsolver::MPB.AbstractMathProgSolver)
+    function LQSolver(model::JuMP.Model, optimsolver::MPB.AbstractMathProgSolver)
         lqmodel = MPB.LinearQuadraticModel(optimsolver)
         solver = new{typeof(lqmodel), typeof(optimsolver)}(lqmodel, optimsolver)
         MPB.loadproblem!(solver.lqmodel, loadLP(model)...)

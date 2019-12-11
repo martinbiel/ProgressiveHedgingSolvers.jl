@@ -27,4 +27,4 @@ end
     @constraint(model, y₁ <= s.ξ₂-x₂)
 end
 
-push!(problems,(integer,"Integer"))
+push!(problems, (integer, "Integer"))

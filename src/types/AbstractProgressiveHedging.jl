@@ -1,4 +1,4 @@
-abstract type AbstractProgressiveHedgingSolver{T <: Real, A <: AbstractVector, S <: LQSolver} <: AbstractStructuredModel end
+abstract type AbstractProgressiveHedgingSolver <: AbstractStructuredModel end
 
 nscenarios(ph::AbstractProgressiveHedgingSolver) = ph.nscenarios
 
@@ -10,7 +10,7 @@ function init!(ph::AbstractProgressiveHedgingSolver, subsolver::QPSolver)
     # Finish initialization based on solver traits
     init_subproblems!(ph, subsolver)
     # Initialize penalty parameter (if applicable)
-    ph.solverdata.δ₁ = 1.0
+    ph.data.δ₁ = 1.0
     init_penalty!(ph)
 end
 # ======================================================================== #
@@ -44,7 +44,7 @@ function iterate_nominal!(ph::AbstractProgressiveHedgingSolver)
     elseif Q == -Inf
         return :Unbounded
     end
-    ph.solverdata.Q = Q
+    ph.data.Q = Q
     # Update iterate
     update_iterate!(ph)
     # Update subproblems
@@ -54,8 +54,8 @@ function iterate_nominal!(ph::AbstractProgressiveHedgingSolver)
     # Update penalty (if applicable)
     update_penalty!(ph)
     # Update progress
-    @unpack δ₁, δ₂ = ph.solverdata
-    ph.solverdata.δ = sqrt(δ₁ + δ₂)/(1e-10+norm(ph.ξ,2))
+    @unpack δ₁, δ₂ = ph.data
+    ph.data.δ = sqrt(δ₁ + δ₂)/(1e-10+norm(ph.ξ,2))
     # Log progress
     log!(ph)
     # Check optimality
@@ -68,29 +68,34 @@ function iterate_nominal!(ph::AbstractProgressiveHedgingSolver)
 end
 
 function log!(ph::AbstractProgressiveHedgingSolver)
-    @unpack Q, δ, δ₂ = ph.solverdata
+    @unpack Q, δ, δ₂ = ph.data
+    @unpack keep, offset, indent = ph.parameters
     push!(ph.Q_history, Q)
     push!(ph.dual_gaps, δ₂)
-    ph.solverdata.iterations += 1
+    ph.data.iterations += 1
     if ph.parameters.log
         ProgressMeter.update!(ph.progress,δ,
                               showvalues = [
-                                  ("Objective",Q),
-                                  ("δ",δ)
-                              ])
+                                  ("$(indentstr(indent))Objective",Q),
+                                  ("$(indentstr(indent))δ",δ)
+                              ], keep = keep, offset = offset)
     end
+end
+
+function indentstr(n::Integer)
+    return repeat(" ", n)
 end
 
 function check_optimality(ph::AbstractProgressiveHedgingSolver)
     @unpack τ = ph.parameters
-    @unpack δ = ph.solverdata
+    @unpack δ = ph.data
     return δ <= τ
 end
 # ======================================================================== #
 function show(io::IO, ph::AbstractProgressiveHedgingSolver)
     println(io, typeof(ph).name.name)
     println(io, "State:")
-    show(io, ph.solverdata)
+    show(io, ph.data)
     println(io, "Parameters:")
     show(io, ph.parameters)
 end
@@ -98,57 +103,3 @@ end
 function show(io::IO, ::MIME"text/plain", ph::AbstractProgressiveHedgingSolver)
     show(io, ph)
 end
-# ======================================================================== #
-
-# Plot recipe #
-# ======================================================================== #
-@recipe f(ph::AbstractProgressiveHedgingSolver) = ph,-1
-@recipe function f(ph::AbstractProgressiveHedgingSolver, time::Real)
-    length(ph.Q_history) > 0 || error("No solution data. Has solver been run?")
-    Qmin = minimum(ph.Q_history)
-    Qmax = maximum(ph.Q_history)
-    increment = std(ph.Q_history)
-
-    linewidth --> 4
-    linecolor --> :black
-    tickfontsize := 14
-    tickfontfamily := "sans-serif"
-    guidefontsize := 16
-    guidefontfamily := "sans-serif"
-    titlefontsize := 22
-    titlefontfamily := "sans-serif"
-    xlabel := time == -1 ? "Iteration" : "Time [s]"
-    ylabel := "Q"
-    ylims --> (Qmin-increment,Qmax+increment)
-    if time == -1
-        xlims --> (1,length(ph.Q_history)+1)
-        xticks --> 1:5:length(ph.Q_history)
-    else
-        xlims --> (0,time)
-        xticks --> linspace(0,time,ceil(Int,length(ph.Q_history)/5))
-    end
-    yticks --> Qmin:increment:Qmax
-    xformatter := (d) -> @sprintf("%.1f",d)
-    yformatter := (d) -> begin
-        if abs(d) <= sqrt(eps())
-            "0.0"
-        elseif (log10(abs(d)) < -2.0 || log10(abs(d)) > 3.0)
-            @sprintf("%.4e",d)
-        elseif log10(abs(d)) > 2.0
-            @sprintf("%.1f",d)
-        else
-            @sprintf("%.2f",d)
-        end
-    end
-
-    @series begin
-        label --> "Q"
-        seriescolor --> :black
-        if time == -1
-            1:1:length(ph.Q_history),ph.Q_history
-        else
-            linspace(0,time,length(ph.Q_history)),ph.Q_history
-        end
-    end
-end
-# ======================================================================== #

@@ -1,4 +1,4 @@
-struct SubProblem{T <: Real, A <: AbstractVector, S <: LQSolver}
+struct SubProblem{T <: AbstractFloat, A <: AbstractVector, S <: LQSolver}
     id::Int
     π::T
     solver::S

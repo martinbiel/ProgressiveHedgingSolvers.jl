@@ -1,10 +1,5 @@
-@scenario Infeasible = begin
-    ξ₁::Float64
-    ξ₂::Float64
-end
-
-s₁ = InfeasibleScenario(6., 8., probability = 0.5)
-s₂ = InfeasibleScenario(4.0, 4.0, probability = 0.5)
+s₁ = Scenario(ξ₁ = 6., ξ₂ = 8., probability = 0.5)
+s₂ = Scenario(ξ₁ = 4., ξ₂ = 4., probability = 0.5)
 
 infeasible = StochasticProgram([s₁,s₂])
 
@@ -16,12 +11,12 @@ end
 
 @second_stage infeasible = begin
     @decision x₁ x₂
-    s = scenario
-    @variable(model, 0.8*s.ξ₁ <= y₁ <= s.ξ₁)
-    @variable(model, 0.8*s.ξ₂ <= y₂ <= s.ξ₂)
+    @uncertain ξ₁ ξ₂
+    @variable(model, 0.8*ξ₁ <= y₁ <= ξ₁)
+    @variable(model, 0.8*ξ₂ <= y₂ <= ξ₂)
     @objective(model, Min, -15*y₁ - 12*y₂)
     @constraint(model, 3*y₁ + 2*y₂ <= x₁)
     @constraint(model, 2*y₁ + 5*y₂ <= x₂)
 end
 
-push!(problems,(infeasible,"Infeasible"))
+push!(problems, (infeasible,"Infeasible"))

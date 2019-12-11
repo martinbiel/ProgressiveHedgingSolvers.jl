@@ -4,19 +4,19 @@
 Return a progressive-hedging algorithm object specified. Supply `qpsolver`, a MathProgBase solver capable of solving quadratic problems.
 
 The following penalty parameter update procedures are available
-- `:none`:  Fixed penalty (default) ?ProgressiveHedging for parameter descriptions.
-- `:adaptive`: Adaptive penalty update ?AdaptiveProgressiveHedging for parameter descriptions.
+- `Fixed`:  Fixed penalty (default) ?Fixed for parameter descriptions.
+- `adaptive`: Adaptive penalty update ?Adaptive for parameter descriptions.
 
 The following execution policies are available
-- `:sequential`:  Classical progressive-hedging (default) ?ProgressiveHedging for parameter descriptions.
-- `:synchronous`: Classical progressive-hedging run in parallel ?SynchronousProgressiveHedging for parameter descriptions.
-- `:asynchronous`: Asynchronous progressive-hedging ?AsynchronousPH for parameter descriptions.
+- `Serial`:  Classical progressive-hedging (default)
+- `Synchronous`: Classical progressive-hedging run in parallel ?Synchronous for parameter descriptions.
+- `Asynchronous`: Asynchronous progressive-hedging ?Asynchronous for parameter descriptions.
 
 ...
 # Arguments
 - `qpsolver::AbstractMathProgSolver`: MathProgBase solver capable of solving quadratic programs.
-- `penalty::Symbol = :none`: Specify penalty update procedure (:none, :adaptive)
-- `execution::Symbol = :sequential`: Specify how algorithm should be executed (:sequential, :synchronous, :asynchronous). Distributed variants requires worker cores.
+- `penalty::AbstractPenalizer = Fixed()`: Specify penalty update procedure (Fixed, Adaptive)
+- `execution::AbstractExecuter = Serial`: Specify how algorithm should be executed (Serial, Synchronous, Asynchronous). Distributed variants requires worker cores.
 - <keyword arguments>: Algorithm specific parameters, consult individual docstrings (see above list) for list of possible arguments and default values.
 ...
 
@@ -32,41 +32,44 @@ Progressive Hedging Time: 0:00:06 (1315 iterations)
 :Optimal
 ```
 """
-struct ProgressiveHedgingSolver{S <: QPSolver} <: AbstractStructuredSolver
+mutable struct ProgressiveHedgingSolver{S <: QPSolver,
+                                        E <: Execution,
+                                        P <: AbstractPenalizer} <: AbstractStructuredSolver
     qpsolver::S
-    penalty::Symbol
-    execution::Symbol
-    parameters
+    execution::E
+    penalty::P
+    crash::CrashMethod
+    parameters::Dict{Symbol,Any}
 
-    function (::Type{ProgressiveHedgingSolver})(qpsolver::QPSolver; crash::Crash.CrashMethod = Crash.None(), penalty = :fixed, execution = :sequential, kwargs...)
-        return new{typeof(qpsolver)}(qpsolver, penalty, execution, kwargs)
+    function ProgressiveHedgingSolver(qpsolver::QPSolver;
+                                      execution::Execution = Serial(),
+                                      penalty::AbstractPenalizer = Fixed(),
+                                      crash::CrashMethod = Crash.None(), kwargs...)
+        S = typeof(qpsolver)
+        E = typeof(execution)
+        P = typeof(penalty)
+        return new{S, E, P}(qpsolver,
+                            execution,
+                            penalty,
+                            crash,
+                            Dict{Symbol,Any}(kwargs))
     end
 end
 
 function StructuredModel(stochasticprogram::StochasticProgram, solver::ProgressiveHedgingSolver)
-    if solver.penalty == :fixed
-        if solver.execution == :synchronous
-            return SynchronousProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
-        elseif solver.execution == :asynchronous
-            return AsynchronousProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
-        elseif solver.execution == :sequential
-            return ProgressiveHedging(stochasticprogram, get_solver(solver.qpsolver); solver.parameters...)
-        else
-            error("Unknown execution: ", solver.execution)
+    x₀ = solver.crash(stochasticprogram, solver.qpsolver)
+    return ProgressiveHedging(stochasticprogram, solver.qpsolver, solver.execution, solver.penalty; solver.parameters...)
+end
+
+function add_params!(solver::ProgressiveHedgingSolver; kwargs...)
+    push!(solver.parameters, kwargs...)
+    for (k,v) in kwargs
+        if k ∈ [:qpsolver, :execution, :penalty, :crash]
+            setfield!(solver, k, v)
+            delete!(solver.parameters, k)
         end
-    elseif solver.penalty == :adaptive
-        if solver.execution == :synchronous
-            return SynchronousAdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
-        elseif solver.execution == :asynchronous
-            return AsynchronousAdaptiveProgressiveHedging(stochasticprogram, solver.qpsolver; solver.parameters...)
-        elseif solver.execution == :sequential
-            return AdaptiveProgressiveHedging(stochasticprogram, get_solver(solver.qpsolver); solver.parameters...)
-        else
-            error("Unknown execution: ", solver.execution)
-        end
-    else
-        error("Unknown penalty procedure: ", solver.penalty)
     end
+    return nothing
 end
 
 function internal_solver(solver::ProgressiveHedgingSolver)
@@ -97,11 +100,5 @@ function fill_solution!(stochasticprogram::StochasticProgram, ph::AbstractProgre
 end
 
 function solverstr(solver::ProgressiveHedgingSolver)
-    if solver.variant == :ph
-        return "Progressive-hedging"
-    elseif solver.variant == :dph
-        return "Distributed progressive-hedging"
-    else
-        error("Unknown progressive-hedging variant: ", solver.variant)
-    end
+    return "Progressive-hedging solver under $(str(solver.execution)) and $(str(solver.penalty))"
 end

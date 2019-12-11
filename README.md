@@ -11,7 +11,7 @@
 ```julia
 julia> using ProgressiveHedgingSolvers
 
-julia> solve(sp,solver=ProgressiveHedgingSolver(:ph, IpoptSolver(print_level=0)))
+julia> solve(sp,solver=ProgressiveHedgingSolver(IpoptSolver(print_level=0)))
 Progressive Hedging Time: 0:00:06 (1315 iterations)
   Objective:  -855.8332803469432
   δ:          9.436947935542464e-7
@@ -19,11 +19,9 @@ Progressive Hedging Time: 0:00:06 (1315 iterations)
 
 ```
 
-Note, that a QP capable `AbstractMathProgSolver` is required to solve emerging subproblems. In addition, there is a distributed variant of the algorithm: `ProgressiveHedgingSolver(:dph)`, which requires adding processes with `addprocs` prior to execution.
+Note, that a QP capable `AbstractMathProgSolver` is required to solve emerging subproblems. In addition, there are distributed variants of the algorithm: `ProgressiveHedgingSolver(execution = Synchronous())` and `ProgressiveHedgingSolver(execution = Asynchronous())`, which requires adding processes with `addprocs` prior to execution.
 
-The algorithm has a set of parameters that can be tuned prior to execution. For a list of these parameters and their default values, use `?` in combination with the solver object. For example, `?ProgressiveHedging` gives the parameter list of the sequential progressive-hedging algorithm. For a list of all solvers and their handle names, use `?ProgressiveHedgingSolver`.
-
-`ProgressiveHedgingSolvers.jl` includes a set of crash methods that can be used to generate the initial decision by supplying functor objects to `ProgressiveHedgingSolver`. Use `?Crash` for a list of available crashes and their usage.
+The algorithm has a set of parameters that can be tuned prior to execution. For a list of these parameters and their default values, use `?` in combination with the solver object. For example, `?Adaptive` gives the parameter list for the adaptive penalty procedure. For a list of all solvers and their handle names, use `?ProgressiveHedgingSolver`.
 
 [StochProg]: https://github.com/martinbiel/StochasticPrograms.jl
 
