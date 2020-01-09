@@ -14,6 +14,9 @@ ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StochasticPrograms = "8b8459f2-c380-502b-8633-9aed2d6c2b35"
 
+[compat]
+JuMP = "~0.18"
+
 [extras]
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 GLPKMathProgInterface = "3c7084bd-78ad-589a-b5bb-dbd673274bea"
