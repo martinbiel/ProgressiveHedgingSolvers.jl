@@ -1,21 +1,14 @@
 ## Documentation: http://docs.travis-ci.com/user/languages/julia/
 language: julia
+codecov: true
+coveralls: true
+
 os:
   - linux
-  - osx
 julia:
-  - 0.7
   - 1.0
+  - 1.1
+  - 1.2
+  - 1.3
 notifications:
   email: false
-
-branches:
-  except:
-  - master
-
-branches:
-  only:
-  - test
-
-after_success:
-    - julia -e 'using Pkg; Pkg.add("Coverage"); cd(Pkg.dir("ProgressiveHedgingSolvers")); using Coverage; Codecov.submit(process_folder())'

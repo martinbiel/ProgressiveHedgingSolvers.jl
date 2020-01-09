@@ -9,16 +9,19 @@ addprocs_with_testenv(3)
 @everywhere using StochasticPrograms
 using ProgressiveHedgingSolvers
 using JuMP
-using Gurobi
+using GLPKMathProgInterface
+using OSQP
 
-τ = 1e-5
-reference_solver = GurobiSolver(OutputFlag=0)
-dphsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), execution = :synchronous, log=false),"Synchronous Progressive Hedging"),
-              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, execution = :synchronous, θ = 1.01, α = 0.9, log=false), "Synchronous Progressive Hedging with Adaptive Penalty"),
-              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), execution = :asynchronous, log=false),"Asynchronous Progressive Hedging"),
-              (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, execution = :asynchronous, θ = 1.01, α = 0.9, log=false), "Asynchronous Adaptive Progressive Hedging")]
-phsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), log=false),"Progressive Hedging"),
-             (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty = :adaptive, θ = 1.01, α = 0.9, log=false), "Adaptive Progressive Hedging")]
+τ = 1e-2
+reference_solver = GLPKSolverLP()
+osqp = OSQP.OSQPMathProgBaseInterface.OSQPSolver(verbose=0)
+
+executors = [Serial(),
+             Synchronous()]
+
+penalties = [Fixed(),
+             Adaptive(θ = 1.01)]
+
 
 problems = Vector{Tuple{<:StochasticProgram,String}}()
 @info "Loading test problems..."
@@ -28,37 +31,48 @@ include("simple.jl")
 include("farmer.jl")
 @info "Loading infeasible..."
 include("infeasible.jl")
-@info "Loading integer..."
-include("integer.jl")
 @info "Test problems loaded. Starting test sequence."
 
 @testset "Distributed solver" begin
-    @testset "$phname Solver with Distributed Data: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
-        optimize!(sp, solver=reference_solver)
-        x̄ = optimal_decision(sp)
-        Q̄ = optimal_value(sp)
-        optimize!(sp, solver=phsolver)
-        @test abs(optimal_value(sp) - Q̄)/(1e-10+abs(Q̄)) <= τ
-        @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
-    end
-    @testset "$phname Solver: $name" for (phsolver,phname) in dphsolvers, (sp,name) in problems
-        sp_nondist = copy(sp, procs=[1])
-        add_scenarios!(sp_nondist, scenarios(sp))
-        optimize!(sp_nondist, solver=reference_solver)
-        x̄ = optimal_decision(sp_nondist)
-        Q̄ = optimal_value(sp_nondist)
-        optimize!(sp_nondist, solver=phsolver)
-        @test abs(optimal_value(sp_nondist) - Q̄) <= τ*(1e-10+abs(Q̄))
-        @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
-    end
-    @testset "$phname Solver with Distributed Data: $name" for (phsolver,phname) in phsolvers, (sp,name) in problems
-        optimize!(sp, solver=reference_solver)
-        x̄ = optimal_decision(sp)
-        Q̄ = optimal_value(sp)
-        with_logger(NullLogger()) do
-            optimize!(sp,solver=phsolver)
+    @testset "$(solverstr(ph)): $name" for ph in [ProgressiveHedgingSolver(osqp,
+                                                                           execution = executor,
+                                                                           penalty = penalty,
+                                                                           τ = 1e-3,
+                                                                           log = false)
+                                                  for executor in executors, penalty in penalties], (sp,name) in problems
+        @testset "Distributed data" begin
+            optimize!(sp, solver=reference_solver)
+            x̄ = optimal_decision(sp)
+            Q̄ = optimal_value(sp)
+            with_logger(NullLogger()) do
+                optimize!(sp, solver=ph)
+            end
+            @test abs(optimal_value(sp) - Q̄)/(1e-10+abs(Q̄)) <= τ
+            @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
         end
-        @test abs(optimal_value(sp) - Q̄) <= τ*(1e-10+abs(Q̄))
-        @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
+        @testset "Data on single remote node" begin
+            sp_onenode = copy(sp)
+            add_scenarios!(sp_onenode, scenarios(sp), workers()[1])
+            optimize!(sp_onenode, solver=reference_solver)
+            x̄ = optimal_decision(sp_onenode)
+            Q̄ = optimal_value(sp_onenode)
+            with_logger(NullLogger()) do
+                optimize!(sp, solver=ph)
+            end
+            @test abs(optimal_value(sp_onenode) - Q̄)/(1e-10+abs(Q̄)) <= τ
+            @test norm(optimal_decision(sp_onenode) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
+        end
+        @testset "Local data" begin
+            sp_nondist = copy(sp, procs = [1])
+            add_scenarios!(sp_nondist, scenarios(sp))
+            optimize!(sp_nondist, solver=reference_solver)
+            x̄ = optimal_decision(sp_nondist)
+            Q̄ = optimal_value(sp_nondist)
+            with_logger(NullLogger()) do
+                optimize!(sp, solver=ph)
+            end
+            @test abs(optimal_value(sp_nondist) - Q̄)/(1e-10+abs(Q̄)) <= τ
+            @test norm(optimal_decision(sp_nondist) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
+        end
     end
 end

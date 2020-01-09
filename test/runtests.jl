@@ -3,12 +3,15 @@ using Test
 using LinearAlgebra
 using JuMP
 using StochasticPrograms
-using Gurobi
+using GLPKMathProgInterface
+using OSQP
 
-τ = 1e-5
-reference_solver = GurobiSolver(OutputFlag=0)
-phsolvers = [(ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), log=false), "Progressive Hedging"),
-             (ProgressiveHedgingSolver(GurobiSolver(OutputFlag=0), penalty=:adaptive, θ = 1.01, log=false), "Adaptive Progressive Hedging")]
+τ = 1e-2
+reference_solver = GLPKSolverLP()
+osqp = OSQP.OSQPMathProgBaseInterface.OSQPSolver(verbose=0)
+
+penalties = [Fixed(),
+             Adaptive(θ = 1.01)]
 
 problems = Vector{Tuple{<:StochasticProgram,String}}()
 @info "Loading test problems..."
@@ -18,15 +21,17 @@ include("simple.jl")
 include("farmer.jl")
 @info "Loading infeasible..."
 include("infeasible.jl")
-@info "Loading integer..."
-include("integer.jl")
 
 @testset "Sequential solver" begin
-    @testset "$phname Solver: $name" for (phsolver,phname) in phsolvers, (sp,name) in problems
-        optimize!(sp, solver = reference_solver)
+    @testset "$(solverstr(ph)): $name" for ph in [ProgressiveHedgingSolver(osqp,
+                                                                           penalty = penalty,
+                                                                           τ = 1e-3,
+                                                                           log = false)
+                                                  for penalty in penalties], (sp,name) in problems
+        optimize!(sp, solver=reference_solver)
         x̄ = optimal_decision(sp)
         Q̄ = optimal_value(sp)
-        optimize!(sp,solver=phsolver)
+        optimize!(sp, solver=ph)
         @test abs(optimal_value(sp) - Q̄)/(1e-10+abs(Q̄)) <= τ
         @test norm(optimal_decision(sp) - x̄)/(1e-10+norm(x̄)) <= sqrt(τ)
     end
